@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "id": 1, "tag": "admin_tier_0", "name": "Tier Zero", "type": 1 },
+    { "id": 2, "tag": "owned", "name": "Owned", "type": 2 }
+  ]
+}

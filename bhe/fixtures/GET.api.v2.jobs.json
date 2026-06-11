@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": 101,
+      "client_id": "c1a2b3c4-0001-0001-0001-000000000001",
+      "status": "COMPLETE",
+      "status_message": "Collection finished",
+      "start_time": "2026-06-04T01:00:00Z",
+      "end_time": "2026-06-04T01:22:00Z",
+      "event_id": 1
+    },
+    {
+      "id": 102,
+      "client_id": "c1a2b3c4-0002-0002-0002-000000000002",
+      "status": "RUNNING",
+      "status_message": "In progress",
+      "start_time": "2026-06-04T08:00:00Z",
+      "end_time": "",
+      "event_id": 2
+    }
+  ]
+}

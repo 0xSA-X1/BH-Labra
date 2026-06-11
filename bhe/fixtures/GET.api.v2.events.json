@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "client_id": "c1a2b3c4-0001-0001-0001-000000000001",
+      "rrule": "FREQ=DAILY;INTERVAL=1",
+      "ad_structure_collection": true,
+      "session_collection": true,
+      "local_group_collection": true,
+      "next_scheduled_at": "2026-06-05T01:00:00Z"
+    },
+    {
+      "id": 2,
+      "client_id": "c1a2b3c4-0002-0002-0002-000000000002",
+      "rrule": "FREQ=DAILY;INTERVAL=1",
+      "ad_structure_collection": true,
+      "session_collection": false,
+      "local_group_collection": false,
+      "next_scheduled_at": "2026-06-05T02:00:00Z"
+    }
+  ]
+}

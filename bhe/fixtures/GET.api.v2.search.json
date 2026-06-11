@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "name": "ALICE@CORP.LOCAL",
+      "type": "User",
+      "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1105",
+      "distinguishedname": "CN=Alice,OU=Staff,DC=corp,DC=local"
+    },
+    {
+      "name": "ALICE-ADMIN@CORP.LOCAL",
+      "type": "User",
+      "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
+      "distinguishedname": "CN=Alice Admin,OU=Admins,DC=corp,DC=local"
+    },
+    {
+      "name": "DC01.CORP.LOCAL",
+      "type": "Computer",
+      "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1001",
+      "distinguishedname": "CN=DC01,OU=Domain Controllers,DC=corp,DC=local"
+    }
+  ]
+}

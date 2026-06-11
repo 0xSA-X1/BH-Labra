@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "finding": "Kerberoastable",
+      "principal": "SVC-SQL@CORP.LOCAL",
+      "principal_kind": "User",
+      "severity": "high",
+      "accepted": false,
+      "exposure": 0.34
+    },
+    {
+      "finding": "DCSync",
+      "principal": "BACKUP-SVC@CORP.LOCAL",
+      "principal_kind": "User",
+      "severity": "critical",
+      "accepted": false,
+      "exposure": 0.91
+    },
+    {
+      "finding": "Unconstrained Delegation",
+      "principal": "APP01.CORP.LOCAL",
+      "principal_kind": "Computer",
+      "severity": "high",
+      "accepted": true,
+      "exposure": 0.22
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "data": {
+    "principal_name": "readonly-api@corp.local",
+    "roles": ["Read-Only"],
+    "first_name": "ReadOnly",
+    "last_name": "API"
+  }
+}

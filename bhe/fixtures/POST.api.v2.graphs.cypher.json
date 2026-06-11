@@ -1,0 +1,41 @@
+{
+  "data": {
+    "nodes": {
+      "1": {
+        "objectId": "S-1-5-21-1111111111-2222222222-3333333333-1105",
+        "label": "ALICE@CORP.LOCAL",
+        "kind": "User",
+        "properties": {
+          "name": "ALICE@CORP.LOCAL",
+          "domain": "CORP.LOCAL",
+          "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1105",
+          "enabled": true
+        }
+      },
+      "2": {
+        "objectId": "S-1-5-21-1111111111-2222222222-3333333333-1140",
+        "label": "HELPDESK@CORP.LOCAL",
+        "kind": "Group",
+        "properties": {
+          "name": "HELPDESK@CORP.LOCAL",
+          "domain": "CORP.LOCAL",
+          "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1140"
+        }
+      },
+      "3": {
+        "objectId": "S-1-5-21-1111111111-2222222222-3333333333-512",
+        "label": "DOMAIN ADMINS@CORP.LOCAL",
+        "kind": "Group",
+        "properties": {
+          "name": "DOMAIN ADMINS@CORP.LOCAL",
+          "domain": "CORP.LOCAL",
+          "objectid": "S-1-5-21-1111111111-2222222222-3333333333-512"
+        }
+      }
+    },
+    "edges": [
+      { "source": "1", "target": "2", "label": "MemberOf", "kind": "MemberOf" },
+      { "source": "2", "target": "3", "label": "GenericAll", "kind": "GenericAll" }
+    ]
+  }
+}

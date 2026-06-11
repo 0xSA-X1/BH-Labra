@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "id": "c1a2b3c4-0001-0001-0001-000000000001",
+      "name": "DC01-Collector",
+      "type": "sharphound",
+      "version": "2.5.7",
+      "last_checkin": "2026-06-04T09:00:00Z",
+      "hostname": "DC01.CORP.LOCAL",
+      "ip_address": "10.0.0.10"
+    },
+    {
+      "id": "c1a2b3c4-0002-0002-0002-000000000002",
+      "name": "Azure-Collector",
+      "type": "azurehound",
+      "version": "2.1.3",
+      "last_checkin": "2026-06-03T22:15:00Z",
+      "hostname": "AAD-SCAN-01",
+      "ip_address": "10.0.0.40"
+    }
+  ]
+}
