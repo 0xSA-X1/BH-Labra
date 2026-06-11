@@ -140,27 +140,65 @@ bhe --install-completion        # then restart the shell, or: exec zsh
 
 ## Configuration
 
-Connection profiles resolve from environment variables (prefix `BHE_`), an
-optional YAML profiles file, and the OS keyring for the Token Key:
+A **profile** is one tenant: `base_url` + `token_id` + `token_key`. The token key
+is never kept in plaintext config — it lives in your OS keyring (macOS Keychain)
+and is only ever used to *sign* requests locally (it is never transmitted).
+Resolution order for the key: `BHE_TOKEN_KEY` env → OS keyring (by profile name)
+→ `token_key:` in the YAML (discouraged).
+
+Get an API token from the BHE UI (Administration → API Tokens); it shows a
+**Token ID** and a **Token Key** (the key is shown once). A **Read-Only** role is
+all you need.
+
+### One tenant (env + keyring)
 
 ```bash
+# add to ~/.zshrc to persist across shells
 export BHE_TENANT_URL="https://acme.bloodhoundenterprise.io"
 export BHE_TOKEN_ID="<token id>"
-export BHE_TOKEN_KEY="<token key>"        # or: bhe keyring set acme
-bhe self
+
+bhe keyring set default        # paste the Token Key (stored in the Keychain)
+bhe doctor                     # verify connectivity + auth
 ```
 
-Token Key resolution order: `BHE_TOKEN_KEY` env → OS keyring → `token_key` field
-in the YAML profile (discouraged; plaintext).
+### Many tenants (YAML profiles)
 
-## Logs & support bundles
+Create `~/.config/bhe/profiles.yaml`:
 
-Every request is recorded (correlation id, method, endpoint, status, latency,
-retry count) and classified into an error taxonomy with remediation hints. For
-live profiles the trace is mirrored to a rotating per-tenant log under the user
-data dir (`%LOCALAPPDATA%\bhe\logs` on Windows; `$XDG_DATA_HOME/bhe/logs`
-otherwise). `bhe bundle` packages a fresh `doctor` run, the request trace, the
-redacted profile, and any persisted logs into a single zip for a ticket.
+```yaml
+profiles:
+  acme:
+    base_url: https://acme.bloodhoundenterprise.io
+    token_id: <acme token id>
+  contoso:
+    base_url: https://contoso.bloodhoundenterprise.io
+    token_id: <contoso token id>
+```
+
+Point `bhe` at it (persist in `~/.zshrc`), then store each tenant's key in the
+Keychain under the **same name** as its YAML entry:
+
+```bash
+echo 'export BHE_PROFILES_FILE="$HOME/.config/bhe/profiles.yaml"' >> ~/.zshrc
+export BHE_PROFILES_FILE="$HOME/.config/bhe/profiles.yaml"
+
+bhe keyring set acme           # paste each tenant's Token Key (input is hidden)
+bhe keyring set contoso
+
+bhe --profile acme doctor
+bhe --profile contoso triage
+```
+
+The profile **name is the join key** — it must match in all three places:
+`acme:` in the YAML, `bhe keyring set acme`, and `--profile acme`.
+
+> **Notes**
+> - `base_url` is the bare origin — no trailing slash, no `/api/...`.
+> - Don't set `BHE_TOKEN_KEY` while using multiple YAML profiles; it would
+>   override *every* profile's key.
+> - Verify any profile with `bhe --profile acme info` (shows `token key: set`)
+>   and `bhe --profile acme self` (signs a live request → your identity/role).
+> - The keyring prompt hides input; paste the key and press Enter.
 
 ## Development
 
