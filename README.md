@@ -1,4 +1,6 @@
-# bhe
+# BH-Labra
+
+> The CLI command is **`bhe`** (BloodHound Enterprise) — `BH-Labra` is the project.
 
 An ergonomic, **read-only** command-line wrapper for the BloodHound Enterprise
 (BHE) `/api/v2` REST API — a Python answer to BloodHoundOperator, built for
