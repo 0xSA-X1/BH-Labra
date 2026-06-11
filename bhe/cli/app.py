@@ -212,29 +212,17 @@ def domains(
         None, help="Optional domain name/id to drill into (e.g. CORP.LOCAL)."
     ),
 ) -> None:
-    """List domains, or drill into one by name/id to see a findings summary."""
+    """List domains, or drill into one by name/id to see its details."""
     if selector is None:
         output(ctx, run(ctx, lambda c: c.get_available_domains()), title="Domains")
         return
 
-    async def _detail(c):
-        dom = await resolve_domain(c, selector)
-        findings = await c.get_domain_attack_path_findings(dom["id"])
-        return dom, findings
-
-    dom, findings = run(ctx, _detail)
-    rows = findings.get("data", []) if isinstance(findings, dict) else (findings or [])
+    dom = run(ctx, lambda c: resolve_domain(c, selector))
     if settings(ctx).as_json:
-        print_json({"domain": dom, "findings": rows})
+        print_json(dom)
         return
 
-    from collections import Counter
-
     output(ctx, dom, title=f"Domain - {dom.get('name')}")
-    counts = Counter(f.get("finding", "?") for f in rows)
-    if counts:
-        summary = [{"finding": k, "count": v} for k, v in counts.most_common()]
-        output(ctx, summary, title="Findings summary")
     name = dom.get("name", selector)
     console.print(
         f"[dim]Drill further:[/dim] bhe findings {name}  |  "
@@ -242,10 +230,72 @@ def domains(
     )
 
 
+def _posture_rows(response) -> list:
+    """Unwrap the posture-stats payload into a flat list of rows."""
+    if isinstance(response, dict):
+        return response.get("data", []) or []
+    return response or []
+
+
+def _latest_posture_per_domain(rows: list) -> list:
+    """Keep only the most recent snapshot per domain (posture-stats is historical)."""
+    best: dict = {}
+    for r in rows:
+        sid = r.get("domain_sid")
+        if sid is None:
+            continue
+        key = (r.get("created_at", ""), r.get("id", 0), r.get("asset_group_tag_id", 0))
+        if sid not in best or key > best[sid][0]:
+            best[sid] = (key, r)
+    return [v[1] for v in best.values()]
+
+
 @app.command()
-def posture(ctx: typer.Context) -> None:
-    """Show current risk-posture stats (GET /api/v2/posture-stats)."""
-    output(ctx, run(ctx, lambda c: c.get_posture_stats()), title="Posture")
+def posture(
+    ctx: typer.Context,
+    history: bool = typer.Option(
+        False, "--history", help="Show every snapshot, not just the latest per domain."
+    ),
+) -> None:
+    """Risk-posture stats per domain (latest snapshot, ranked by exposure)."""
+
+    async def _go(c):
+        rows = _posture_rows(await c.get_posture_stats())
+        names = {d.get("id"): d.get("name") for d in await c.get_available_domains()}
+        return rows, names
+
+    rows, names = run(ctx, _go)
+    if not history:
+        rows = _latest_posture_per_domain(rows)
+    out = [
+        {
+            "domain": names.get(r.get("domain_sid")) or r.get("domain_sid", ""),
+            "exposure": r.get("exposure_index"),
+            "tier_zero": r.get("tier_zero_count"),
+            "critical": r.get("critical_risk_count"),
+            "updated": r.get("updated_at") or r.get("created_at", ""),
+        }
+        for r in rows
+    ]
+    out.sort(
+        key=lambda x: x["exposure"] if isinstance(x["exposure"], (int, float)) else -1,
+        reverse=True,
+    )
+    output(
+        ctx,
+        out,
+        columns=["domain", "exposure", "tier_zero", "critical", "updated"],
+        title="Posture" + ("" if history else " (latest per domain)"),
+    )
+
+
+def _finding_type_id(t) -> str:
+    """Normalise an available-types entry (string or object) to its id."""
+    if isinstance(t, str):
+        return t
+    if isinstance(t, dict):
+        return t.get("id") or t.get("finding") or t.get("type") or ""
+    return ""
 
 
 @app.command()
@@ -253,86 +303,72 @@ def findings(
     ctx: typer.Context,
     domain: str = typer.Argument(..., help="Domain name or id (e.g. CORP.LOCAL)."),
 ) -> None:
-    """List a domain's attack-path findings (resolves the domain by name)."""
+    """List a domain's attack-path findings, counted per finding type.
+
+    BHE's findings endpoint is per finding-type, so this lists the domain's
+    available types and counts the affected principals for each.
+    """
+    from bhe.api.client import BHEClientError
 
     async def _go(c):
         dom = await resolve_domain(c, domain)
-        return await c.get_domain_attack_path_findings(dom["id"])
+        types = await c.get_domain_available_types(dom["id"])
+        rows = []
+        for t in types or []:
+            tid = _finding_type_id(t)
+            if not tid:
+                continue
+            try:
+                resp = await c.get_domain_attack_path_findings(dom["id"], params={"finding": tid})
+            except BHEClientError:
+                continue
+            data = resp.get("data", resp) if isinstance(resp, dict) else resp
+            count = len(data) if isinstance(data, list) else 0
+            rows.append({"finding": tid, "principals": count})
+        rows.sort(key=lambda r: r["principals"], reverse=True)
+        return rows
 
-    output(
-        ctx,
-        run(ctx, _go),
-        columns=["finding", "principal", "principal_kind", "severity", "accepted", "exposure"],
-        title=f"Findings - {domain}",
-    )
-
-
-@app.command("attack-paths")
-def attack_paths(ctx: typer.Context) -> None:
-    """List attack paths (GET /api/v2/attack-paths)."""
-    output(ctx, run(ctx, lambda c: c.get_attack_paths()), title="Attack paths")
+    output(ctx, run(ctx, _go), columns=["finding", "principals"], title=f"Findings - {domain}")
 
 
 @app.command()
 def triage(
     ctx: typer.Context,
-    top: int = typer.Option(20, "--top", "-n", help="Show the top N rows."),
-    severity: str = typer.Option(None, "--severity", help="Filter to a severity."),
-    by_type: bool = typer.Option(
-        False, "--by-type", help="Collapse domains; one row per finding type."
-    ),
-    include_accepted: bool = typer.Option(
-        False, "--include-accepted", help="Also score accepted-risk findings."
-    ),
-    domain: str = typer.Option(
-        None, "--domain", help="Limit to one domain (name or id)."
-    ),
+    top: int = typer.Option(20, "--top", "-n", help="Show the top N domains."),
 ) -> None:
-    """Rank attack-path findings across ALL domains -> what to fix first.
+    """Rank domains by Tier Zero exposure -> where to start.
 
-    Uses BHE's precomputed findings (no Cypher), so it stays fast on large estates.
-    Score = severity_weight x active_principals x (1 + max_exposure).
+    Uses BHE's precomputed posture-stats (no Cypher), so it's instant even on a
+    large estate. Sorted by exposure index, then critical-risk count.
     """
-    from bhe.api.client import BHEClientError
-    from bhe.triage import rollup_by_type, severity_rank, severity_totals, summarize
 
     async def _go(c):
-        domains = [await resolve_domain(c, domain)] if domain else await c.get_available_domains()
-        collected = []
-        for d in domains:
-            try:
-                findings = await c.get_domain_attack_path_findings(d["id"])
-            except BHEClientError:
-                continue  # some domains 404 findings on older tenants — skip
-            collected.append((d, findings))
-        return collected
+        rows = _latest_posture_per_domain(_posture_rows(await c.get_posture_stats()))
+        names = {d.get("id"): d.get("name") for d in await c.get_available_domains()}
+        return rows, names
 
-    rows = summarize(run(ctx, _go), include_accepted=include_accepted)
-    if severity:
-        rows = [r for r in rows if r.severity.lower() == severity.lower()]
-
-    if by_type:
-        output(
-            ctx,
-            rollup_by_type(rows)[:top],
-            columns=["finding", "severity", "domains", "principals", "max_exposure", "score"],
-            title="Triage - by finding type",
-        )
-        return
-
-    if not settings(ctx).as_json:
-        totals = severity_totals(rows)
-        order = sorted(totals.items(), key=lambda kv: severity_rank(kv[0]), reverse=True)
-        breakdown = "  ".join(f"{k}:{v}" for k, v in order) or "(none)"
-        console.print(
-            f"[bold]{len(rows)}[/bold] active finding-groups  |  "
-            f"principals by severity: {breakdown}"
-        )
+    rows, names = run(ctx, _go)
+    ranked = [
+        {
+            "domain": names.get(r.get("domain_sid")) or r.get("domain_sid", ""),
+            "exposure": r.get("exposure_index"),
+            "critical": r.get("critical_risk_count"),
+            "tier_zero": r.get("tier_zero_count"),
+        }
+        for r in rows
+    ]
+    ranked.sort(
+        key=lambda x: (
+            x["exposure"] if isinstance(x["exposure"], (int, float)) else -1,
+            x["critical"] if isinstance(x["critical"], (int, float)) else -1,
+        ),
+        reverse=True,
+    )
     output(
         ctx,
-        [r.as_dict() for r in rows[:top]],
-        columns=["finding", "domain", "severity", "principals", "max_exposure", "score"],
-        title="Triage - start here",
+        ranked[:top],
+        columns=["domain", "exposure", "critical", "tier_zero"],
+        title="Triage - domains by exposure (fix these first)",
     )
 
 

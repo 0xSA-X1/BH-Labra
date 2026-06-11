@@ -118,11 +118,17 @@ No `uv` required — it's a standard package. On **macOS / Linux** with native
 Python (≥ 3.10):
 
 ```bash
-cd bhe
+cd BH-Labra
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .            # puts `bhe` on your PATH
+python -m pip install --upgrade pip    # editable installs need pip >= 21.3 (PEP 660)
+pip install -e .                        # puts `bhe` on your PATH
 bhe --mock domains
 ```
+
+If your `pip` is too old to upgrade, `pip install .` (non-editable) works on
+older pip and still installs the `bhe` command — you only need `-e` for editing
+the code. (macOS system Python may be 3.9; if so, use Homebrew Python:
+`brew install python@3.12 && python3.12 -m venv .venv`.)
 
 On macOS the Token Key is stored in the **Keychain** via `bhe keyring set`.
 (During development you can also use `python -m uv run bhe …` from the repo, but

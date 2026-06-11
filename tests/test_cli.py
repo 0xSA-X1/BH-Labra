@@ -79,8 +79,8 @@ def test_domains_drilldown_json() -> None:
     result = _invoke("--mock", "--json", "domains", "contoso")
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
-    assert payload["domain"]["type"] == "azure"
-    assert isinstance(payload["findings"], list)
+    assert payload["type"] == "azure"
+    assert payload["name"] == "contoso.onmicrosoft.com"
 
 
 def test_domains_ambiguous_exits_2() -> None:
@@ -92,8 +92,8 @@ def test_findings_by_domain_name() -> None:
     result = _invoke("--mock", "--json", "findings", "CORP.LOCAL")
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
-    data = rows["data"] if isinstance(rows, dict) else rows
-    assert any(f.get("finding") == "Kerberoastable" for f in data)
+    # Per finding-type counts (available-types -> findings per type).
+    assert any(r["finding"] == "Kerberoastable" and r["principals"] >= 1 for r in rows)
 
 
 def test_jobs_correlated_to_client() -> None:
@@ -130,25 +130,22 @@ def test_hunt_tier_zero_dry_run_emits_cypher() -> None:
     assert "admin_tier_0" in result.stdout
 
 
-def test_triage_ranks_across_domains() -> None:
+def test_triage_ranks_domains_by_exposure() -> None:
     result = _invoke("--mock", "--json", "triage")
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
-    assert rows  # at least one finding-group
-    # DCSync (critical) must be the top row; accepted Unconstrained excluded.
-    assert rows[0]["finding"] == "DCSync"
-    assert all(r["finding"] != "Unconstrained Delegation" for r in rows)
-    # Scores are sorted descending.
-    assert rows == sorted(rows, key=lambda r: r["score"], reverse=True)
+    assert rows  # at least one domain
+    assert "domain" in rows[0] and "exposure" in rows[0]
+    # Sorted by exposure descending.
+    exposures = [r["exposure"] for r in rows if isinstance(r["exposure"], (int, float))]
+    assert exposures == sorted(exposures, reverse=True)
 
 
-def test_triage_by_type_rollup() -> None:
-    result = _invoke("--mock", "--json", "triage", "--by-type")
+def test_posture_latest_per_domain() -> None:
+    result = _invoke("--mock", "--json", "posture")
     assert result.exit_code == 0
-    rolled = json.loads(result.stdout)
-    dcsync = next(r for r in rolled if r["finding"] == "DCSync")
-    # Mock serves the same findings for every domain (3 available) -> 3 domains.
-    assert dcsync["domains"] == 3
+    rows = json.loads(result.stdout)
+    assert rows and "exposure" in rows[0]
 
 
 def test_choke_tier_zero_ranks_helpdesk() -> None:
