@@ -38,10 +38,9 @@ Point it at a customer tenant without fear of mutating state. (Audited
 | `bhe self` | Authenticated identity + token role |
 | `bhe api-version` | Tenant BHE API/server version |
 | `bhe profile` | Active connection profile (redacted) |
-| `bhe domains [name]` | List domains, or **drill into one** by name/id (findings summary) |
-| `bhe posture` | Risk-posture stats |
-| `bhe findings <domain>` | A domain's attack-path findings (by **name** or id) |
-| `bhe attack-paths` | Attack paths |
+| `bhe domains [name]` | List domains, or **drill into one** by name/id |
+| `bhe posture [--history]` | Risk-posture per domain (latest snapshot, ranked) |
+| `bhe findings <domain>` | A domain's attack-path findings, per type (by **name** or id) |
 | `bhe clients` / `bhe client <id>` | Collection clients |
 | `bhe jobs [--current\|--finished]` / `bhe job <id>` | Jobs, **correlated to client name/host** |
 | `bhe events` | Scheduled collection events (schedules) |
@@ -49,7 +48,7 @@ Point it at a customer tenant without fear of mutating state. (Audited
 | `bhe entity <name\|id> [--kind user]` | Entity detail (by **name**, disambiguates) |
 | `bhe cypher "<query>"` | Run raw read-only Cypher; show nodes |
 | `bhe hunt …` | **Guided attack paths — generates the Cypher for you** (see below) |
-| `bhe triage [--by-type]` | **Rank findings across ALL domains — where to start** |
+| `bhe triage` | **Rank domains by Tier Zero exposure — where to start** |
 | `bhe choke <target>\|--tier-zero` | **Highest-leverage choke points to remediate** (see below) |
 | `bhe leaks <target>\|--tier-zero` | **Cross-domain/platform leakage** into the crown jewels |
 | `bhe map <target>\|--tier-zero [-f dot]` | **Condensed, bundled attack graph** (Mermaid/DOT) |
@@ -72,14 +71,14 @@ For big multi-domain, multi-platform tenants, asking the graph for *all* attack
 paths times out. `bhe` works the problem the scalable way:
 
 ```console
-$ bhe triage                       # rank precomputed findings across every domain
+$ bhe triage                       # rank domains by Tier Zero exposure
 $ bhe choke --tier-zero            # the few nodes whose fix cuts the most paths
 $ bhe leaks --tier-zero            # which domains/platforms leak into Tier Zero
 $ bhe map --tier-zero | pbcopy     # condensed Mermaid graph -> paste into a viewer
 ```
 
-- **`triage`** uses BHE's precomputed findings (no Cypher) — instant even on a
-  million objects. Score = `severity × active_principals × (1 + exposure)`.
+- **`triage`** uses BHE's precomputed posture-stats (no Cypher) — instant even on
+  a million objects. Ranks domains by exposure index, then critical-risk count.
 - **`choke` / `leaks` / `map`** walk **backward from Tier Zero** one bounded,
   batched, *concurrent* hop at a time — they never issue a global path query.
   High-degree "mass" nodes are detected and truncated without enumeration, and
