@@ -96,6 +96,26 @@ def test_findings_by_domain_name() -> None:
     assert any(r["finding"] == "Kerberoastable" and r["principals"] >= 1 for r in rows)
 
 
+def test_events_humanized_and_client_correlated() -> None:
+    result = _invoke("--mock", "--json", "events")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    ev = next(r for r in rows if r["id"] == 1)
+    assert ev["client"] == "DC01-Collector"  # client_id resolved to a name
+    assert ev["cadence"] == "Daily"  # rrule humanized
+    # The five boolean flags collapse into one readable list.
+    assert "ad" in ev["collects"] and "session" in ev["collects"]
+
+
+def test_rrule_humanizer() -> None:
+    from bhe.cli.app import _humanize_rrule
+
+    assert _humanize_rrule("FREQ=DAILY;INTERVAL=1") == "Daily"
+    assert _humanize_rrule("FREQ=DAILY;INTERVAL=5") == "Every 5 days"
+    assert _humanize_rrule("DTSTART:20260611T121520Z\nRRULE:FREQ=DAILY;INTERVAL=1") == "Daily"
+    assert _humanize_rrule("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE") == "Weekly on MO,WE"
+
+
 def test_jobs_correlated_to_client() -> None:
     result = _invoke("--mock", "--json", "jobs")
     assert result.exit_code == 0
@@ -130,15 +150,28 @@ def test_hunt_tier_zero_dry_run_emits_cypher() -> None:
     assert "admin_tier_0" in result.stdout
 
 
-def test_triage_ranks_domains_by_exposure() -> None:
+def test_triage_ranks_findings_across_domains() -> None:
     result = _invoke("--mock", "--json", "triage")
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
-    assert rows  # at least one domain
-    assert "domain" in rows[0] and "exposure" in rows[0]
-    # Sorted by exposure descending.
-    exposures = [r["exposure"] for r in rows if isinstance(r["exposure"], (int, float))]
-    assert exposures == sorted(exposures, reverse=True)
+    assert rows
+    # Finding-centric now (not domain-by-exposure); critical DCSync ranks first.
+    assert rows[0]["finding"] == "DCSync"
+    assert rows[0]["severity"] == "critical"
+    # Scored descending, and accepted-risk findings are excluded by default.
+    scores = [r["score"] for r in rows]
+    assert scores == sorted(scores, reverse=True)
+    assert not any(r["finding"] == "Unconstrained Delegation" for r in rows)
+
+
+def test_triage_by_type_rolls_up_domains() -> None:
+    result = _invoke("--mock", "--json", "triage", "--by-type")
+    assert result.exit_code == 0
+    rolled = json.loads(result.stdout)
+    dcsync = next(r for r in rolled if r["finding"] == "DCSync")
+    # The synthetic estate has 3 domains, each surfacing DCSync.
+    assert dcsync["domains"] == 3
+    assert rolled[0]["finding"] == "DCSync"
 
 
 def test_posture_latest_per_domain() -> None:
@@ -161,6 +194,30 @@ def test_choke_tier_zero_ranks_helpdesk() -> None:
 def test_choke_requires_a_seed() -> None:
     result = _invoke("--mock", "choke")  # no target, no --tier-zero
     assert result.exit_code == 2
+
+
+def test_choke_domain_scope_matches_the_only_t0_domain() -> None:
+    # The synthetic estate's only Tier Zero lives in CORP.LOCAL, so scoping to it
+    # reproduces the full-estate result. --domain implies --tier-zero.
+    result = _invoke("--mock", "--json", "choke", "--domain", "CORP.LOCAL")
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["exposed_sources"] == 5
+    assert "HELPDESK" in payload["choke_points"][0]["name"]
+
+
+def test_choke_domain_scope_with_no_t0_seeds_exits_1() -> None:
+    # DEV.CORP.LOCAL has no Tier Zero nodes -> nothing to funnel into.
+    result = _invoke("--mock", "choke", "--domain", "DEV.CORP.LOCAL")
+    assert result.exit_code == 1
+
+
+def test_posture_domain_scope_filters_to_one() -> None:
+    result = _invoke("--mock", "--json", "posture", "CORP.LOCAL")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert len(rows) == 1
+    assert rows[0]["domain"] == "CORP.LOCAL"
 
 
 def test_leaks_finds_cross_domain() -> None:

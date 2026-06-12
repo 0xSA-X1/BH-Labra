@@ -107,28 +107,41 @@ class BHETransport:
                 await instance._http.aclose()
                 instance._http = None
 
-    async def _dispatch(
+    async def _sign_and_send(
         self,
         method: str,
         endpoint: str,
-        headers: dict[str, str],
-        content: bytes | None,
+        body: bytes,
         params: dict[str, Any] | None,
     ) -> httpx.Response:
-        """Send one request via the live HTTP client or the mock transport."""
+        """Sign over the EXACT wire URI (path + query) and send one attempt.
+
+        BHE's HMAC covers ``method + RequestURI``, and the RequestURI the server
+        validates *includes the query string*.  So we let httpx build the request
+        first, sign over its real ``raw_path`` (path + URL-encoded query), then
+        send that same request - guaranteeing the bytes we signed are the bytes
+        the server receives.  Signing only the bare path is what made every
+        query-bearing GET (``search``, ``shortest-path``, ``findings``) 401 with
+        "signature digest mismatch".
+
+        A fresh timestamp is embedded per call, so this is re-invoked each retry.
+        """
+        content = body if body else None
         if self._mock is not None:
+            # The mock transport doesn't validate signatures; skip signing.
             return self._mock.dispatch(method, endpoint, params, content)
         if self._http is None:
             raise RuntimeError(
                 "BHEClient must be used within 'async with BHEClient.connect(...)'."
             )
-        return await self._http.request(
-            method=method,
-            url=endpoint,
-            headers=headers,
-            content=content,
-            params=params,
+        request = self._http.build_request(
+            method=method, url=endpoint, content=content, params=params
         )
+        signed_uri = request.url.raw_path.decode("ascii")
+        request.headers.update(
+            self._auth.sign_request(method=method, uri=signed_uri, body=body)
+        )
+        return await self._http.send(request)
 
     async def _request(
         self,
@@ -175,18 +188,8 @@ class BHETransport:
             response: httpx.Response | None = None
             delay = self._RATE_LIMIT_BASE_DELAY
             for attempt in range(self._RATE_LIMIT_MAX_RETRIES + 1):
-                # Re-sign every attempt: the HMAC envelope embeds a fresh timestamp.
-                headers = self._auth.sign_request(
-                    method=method, uri=endpoint, body=body
-                )
-
-                response = await self._dispatch(
-                    method=method,
-                    endpoint=endpoint,
-                    headers=headers,
-                    content=body if body else None,
-                    params=params,
-                )
+                # _sign_and_send re-signs per attempt (fresh HMAC timestamp).
+                response = await self._sign_and_send(method, endpoint, body, params)
 
                 if (
                     response.status_code != 429

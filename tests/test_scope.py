@@ -7,13 +7,38 @@ from bhe.scope import (
     Edge,
     Expansion,
     backward_reach,
+    domain_of,
     edges_from_response,
     inbound_query,
     make_expander,
     rank_choke_points,
     seeds_from_response,
+    seeds_in_domain,
     tier_zero_seed_query,
 )
+
+
+def test_domain_of_prefers_property_then_derives_from_name() -> None:
+    # Explicit domain wins.
+    assert domain_of("MERLIN@SUGAFOOT.LOCAL", "User", "SUGAFOOT.LOCAL") == "SUGAFOOT.LOCAL"
+    # Missing domain -> derive from the @-suffix for ordinary principals.
+    assert domain_of("MERLIN_WOOTEN@SUGAFOOT.LOCAL", "User", "") == "SUGAFOOT.LOCAL"
+    # Local groups carry HOST.DOMAIN; the host label is dropped.
+    assert domain_of("USERS@ISLAMORADA01.STATES.LOCAL", "ADLocalGroup", "") == "STATES.LOCAL"
+    # A bare computer FQDN (no @) is host.domain too.
+    assert domain_of("OGCWCTRX1000000.SUGAFOOT.LOCAL", "Computer", "") == "SUGAFOOT.LOCAL"
+    # Nothing usable (e.g. a SID-shaped name) -> a clear sentinel, not "?".
+    assert domain_of("S-1-5-21-1-2-3-1140", "Group", "") == "(unknown)"
+
+
+def test_seeds_in_domain_filters_by_alias() -> None:
+    seeds = {
+        "a": ("DOMAIN ADMINS@CORP.LOCAL", "Group", "CORP.LOCAL"),
+        "b": ("DEV-ADMIN@DEV.CORP.LOCAL", "User", "DEV.CORP.LOCAL"),
+        "c": ("ORPHAN", "User", ""),
+    }
+    kept = seeds_in_domain(seeds, {"corp.local"})
+    assert set(kept) == {"a"}
 
 # An in-memory funnel: target -> list of (source_oid, name, kind, edge_type).
 _FUNNEL = {

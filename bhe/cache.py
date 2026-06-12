@@ -43,9 +43,22 @@ def app_cache_dir() -> Path:
     return base / "bhe" / "snapshots"
 
 
-def snapshot_key(profile: str, target: str | None, tier_zero: bool, max_depth: int, fanin: int) -> str:
-    """Stable cache key for a scoping run."""
+def snapshot_key(
+    profile: str,
+    target: str | None,
+    tier_zero: bool,
+    max_depth: int,
+    fanin: int,
+    domain: str | None = None,
+) -> str:
+    """Stable cache key for a scoping run.
+
+    ``domain`` is folded in so a domain-scoped snapshot never collides with the
+    full-estate one for the same profile/depth/fan-in.
+    """
     seed = "tier-zero" if tier_zero else (target or "")
+    if domain:
+        seed = f"{seed}@{domain.strip().lower()}"
     return f"{profile}|{seed}|{max_depth}|{fanin}"
 
 

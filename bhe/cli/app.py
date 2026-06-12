@@ -27,21 +27,28 @@ from bhe.cli.hunt import hunt_app
 from bhe.config import KeyringUnavailable
 from bhe.scope import (
     backward_reach,
+    domain_of,
     make_expander,
     rank_choke_points,
     seeds_from_response,
+    seeds_in_domain,
     tier_zero_seed_query,
 )
 
 
-async def _build_snapshot(client, *, target, tier_zero, max_depth, fanin, concurrency=8):
+async def _build_snapshot(client, *, target, tier_zero, max_depth, fanin, domain=None, concurrency=8):
     """Resolve seeds (a target, or all of Tier Zero) and walk backward.
 
     Shared by ``choke`` / ``leaks`` / ``map`` — they're all views over the same
-    Tier-Zero-reachable snapshot.
+    Tier-Zero-reachable snapshot.  ``domain`` narrows the Tier-Zero seed set to
+    one domain so a team can work one domain at a time.
     """
     if tier_zero:
         seeds = seeds_from_response(await client.cypher_query(tier_zero_seed_query()))
+        if domain:
+            dom = await resolve_domain(client, domain)
+            aliases = {str(dom.get("name", "")).lower(), str(dom.get("id", "")).lower()} - {""}
+            seeds = seeds_in_domain(seeds, aliases)
     else:
         node = await resolve_principal(client, target)
         oid = node.get("objectid")
@@ -55,7 +62,7 @@ async def _build_snapshot(client, *, target, tier_zero, max_depth, fanin, concur
     )
 
 
-def scoped_snapshot(ctx, *, target, tier_zero, max_depth, fanin, refresh=False, concurrency=8):
+def scoped_snapshot(ctx, *, target, tier_zero, max_depth, fanin, domain=None, refresh=False, concurrency=8):
     """Build (or reuse a cached) backward snapshot. Returns ``(snapshot, age)``.
 
     Mock mode never touches the on-disk cache (keeps tests/synthetic runs clean).
@@ -65,7 +72,7 @@ def scoped_snapshot(ctx, *, target, tier_zero, max_depth, fanin, refresh=False, 
             ctx,
             lambda c: _build_snapshot(
                 c, target=target, tier_zero=tier_zero, max_depth=max_depth,
-                fanin=fanin, concurrency=concurrency,
+                fanin=fanin, domain=domain, concurrency=concurrency,
             ),
         )
 
@@ -75,7 +82,7 @@ def scoped_snapshot(ctx, *, target, tier_zero, max_depth, fanin, refresh=False, 
 
     from bhe.cache import load_snapshot, save_snapshot, snapshot_key
 
-    key = snapshot_key(profile.name, target, tier_zero, max_depth, fanin)
+    key = snapshot_key(profile.name, target, tier_zero, max_depth, fanin, domain)
     if not refresh:
         hit = load_snapshot(key)
         if hit is not None:
@@ -253,18 +260,27 @@ def _latest_posture_per_domain(rows: list) -> list:
 @app.command()
 def posture(
     ctx: typer.Context,
+    domain: str = typer.Argument(
+        None, help="Optional domain name/id to scope to (e.g. ESSOS.LOCAL)."
+    ),
     history: bool = typer.Option(
         False, "--history", help="Show every snapshot, not just the latest per domain."
     ),
 ) -> None:
-    """Risk-posture stats per domain (latest snapshot, ranked by exposure)."""
+    """Risk-posture stats per domain (latest snapshot, ranked by exposure).
+
+    Pass a domain to scope to just that one (work one domain at a time).
+    """
 
     async def _go(c):
+        dom = await resolve_domain(c, domain) if domain else None
         rows = _posture_rows(await c.get_posture_stats())
         names = {d.get("id"): d.get("name") for d in await c.get_available_domains()}
-        return rows, names
+        return rows, names, dom
 
-    rows, names = run(ctx, _go)
+    rows, names, dom = run(ctx, _go)
+    if dom is not None:
+        rows = [r for r in rows if r.get("domain_sid") == dom.get("id")]
     if not history:
         rows = _latest_posture_per_domain(rows)
     out = [
@@ -281,11 +297,12 @@ def posture(
         key=lambda x: x["exposure"] if isinstance(x["exposure"], (int, float)) else -1,
         reverse=True,
     )
+    scope = f" - {dom.get('name')}" if dom is not None else ""
     output(
         ctx,
         out,
         columns=["domain", "exposure", "tier_zero", "critical", "updated"],
-        title="Posture" + ("" if history else " (latest per domain)"),
+        title=f"Posture{scope}" + ("" if history else " (latest per domain)"),
     )
 
 
@@ -331,45 +348,94 @@ def findings(
     output(ctx, run(ctx, _go), columns=["finding", "principals"], title=f"Findings - {domain}")
 
 
+async def _domain_finding_records(client, dom, sem) -> tuple:
+    """Fetch one domain's attack-path findings, one bounded call per finding type.
+
+    Returns ``(domain_record, [finding_record, ...])`` shaped for
+    :func:`bhe.triage.summarize`.  The ``?finding=`` filter is what the real API
+    expects; the mock ignores it and returns every type, so we also filter
+    client-side by the requested type - correct against both.
+    """
+    import asyncio
+
+    from bhe.api.client import BHEClientError
+
+    did = dom.get("id")
+    if not did:
+        return dom, []
+    types = await client.get_domain_available_types(did)
+    tids = [t for t in (_finding_type_id(x) for x in (types or [])) if t]
+
+    async def _one(tid: str) -> list:
+        async with sem:
+            try:
+                resp = await client.get_domain_attack_path_findings(did, params={"finding": tid})
+            except BHEClientError:
+                return []
+        data = resp.get("data", resp) if isinstance(resp, dict) else resp
+        out = []
+        for rec in data or []:
+            if not isinstance(rec, dict):
+                continue
+            found = rec.get("finding")
+            if found is None:
+                rec = {**rec, "finding": tid}  # real records may not echo the type
+            elif found != tid:
+                continue  # mock returns all types; keep only the requested one
+            out.append(rec)
+        return out
+
+    chunks = await asyncio.gather(*(_one(t) for t in tids))
+    return dom, [rec for chunk in chunks for rec in chunk]
+
+
 @app.command()
 def triage(
     ctx: typer.Context,
-    top: int = typer.Option(20, "--top", "-n", help="Show the top N domains."),
+    top: int = typer.Option(20, "--top", "-n", help="Show the top N rows."),
+    by_type: bool = typer.Option(
+        False, "--by-type", help="Roll up across domains: one row per finding type."
+    ),
+    include_accepted: bool = typer.Option(
+        False, "--include-accepted", help="Also score accepted-risk findings."
+    ),
 ) -> None:
-    """Rank domains by Tier Zero exposure -> where to start.
+    """Rank attack-path findings across ALL domains -> where to start.
 
-    Uses BHE's precomputed posture-stats (no Cypher), so it's instant even on a
-    large estate. Sorted by exposure index, then critical-risk count.
+    Unlike the website's per-domain Attack Paths view, this ranks every finding
+    type across the whole estate in one list, scored transparently as
+    severity-weight x affected principals x (1 + exposure). Accepted-risk findings
+    are excluded by default. Use ``--by-type`` for an estate-wide roll-up.
     """
+    import asyncio
+
+    from bhe.triage import rollup_by_type, severity_totals, summarize
 
     async def _go(c):
-        rows = _latest_posture_per_domain(_posture_rows(await c.get_posture_stats()))
-        names = {d.get("id"): d.get("name") for d in await c.get_available_domains()}
-        return rows, names
+        domains = await c.get_available_domains()
+        sem = asyncio.Semaphore(8)  # bound fan-out so we don't trip the rate limiter
+        return await asyncio.gather(*(_domain_finding_records(c, d, sem) for d in domains))
 
-    rows, names = run(ctx, _go)
-    ranked = [
-        {
-            "domain": names.get(r.get("domain_sid")) or r.get("domain_sid", ""),
-            "exposure": r.get("exposure_index"),
-            "critical": r.get("critical_risk_count"),
-            "tier_zero": r.get("tier_zero_count"),
-        }
-        for r in rows
-    ]
-    ranked.sort(
-        key=lambda x: (
-            x["exposure"] if isinstance(x["exposure"], (int, float)) else -1,
-            x["critical"] if isinstance(x["critical"], (int, float)) else -1,
-        ),
-        reverse=True,
-    )
-    output(
-        ctx,
-        ranked[:top],
-        columns=["domain", "exposure", "critical", "tier_zero"],
-        title="Triage - domains by exposure (fix these first)",
-    )
+    per_domain = run(ctx, _go)
+    rows = summarize(per_domain, include_accepted=include_accepted)
+
+    if by_type:
+        out = rollup_by_type(rows)[:top]
+        columns = ["finding", "severity", "domains", "principals", "max_exposure", "score"]
+    else:
+        out = [r.as_dict() for r in rows[:top]]
+        columns = ["finding", "domain", "severity", "principals", "accepted", "max_exposure", "score"]
+
+    if settings(ctx).as_json:
+        print_json(out)
+        return
+    if not out:
+        console.print("[green]No unremediated attack-path findings across the estate.[/green]")
+        return
+    totals = severity_totals(rows)
+    summary = ", ".join(f"{k}: {v}" for k, v in sorted(totals.items()))
+    console.print(f"[dim]Active principals by severity -> {summary}[/dim]")
+    output(ctx, out, columns=columns, title="Triage - findings across the estate (fix these first)")
 
 
 # ----------------------------------------------------------------------------
@@ -442,10 +508,113 @@ def job(
     output(ctx, run(ctx, lambda c: c.get_job(job_id)), title=f"Job {job_id}")
 
 
+# Collection-flag field -> short label, in a sensible display order.
+_COLLECTION_LABELS = {
+    "session_collection": "session",
+    "local_group_collection": "local-groups",
+    "ad_structure_collection": "ad",
+    "cert_services_collection": "cert-services",
+    "ca_registry_collection": "ca-registry",
+}
+
+
+def _humanize_rrule(rrule: str) -> str:
+    """Turn an iCal RRULE (e.g. ``FREQ=DAILY;INTERVAL=1``) into plain English."""
+    if not rrule:
+        return ""
+    parts: dict[str, str] = {}
+    for line in rrule.replace("\\n", "\n").splitlines():
+        line = line.strip()
+        if line.upper().startswith("DTSTART"):
+            continue
+        if line.upper().startswith("RRULE") and ":" in line:
+            line = line.split(":", 1)[1]
+        for kv in line.split(";"):
+            if "=" in kv:
+                key, value = kv.split("=", 1)
+                parts[key.strip().upper()] = value.strip().upper()
+    unit = {
+        "MINUTELY": "minute", "HOURLY": "hour", "DAILY": "day",
+        "WEEKLY": "week", "MONTHLY": "month", "YEARLY": "year",
+    }.get(parts.get("FREQ", ""))
+    if unit is None:
+        return rrule  # unknown shape - show it raw rather than lie
+    try:
+        n = int(parts.get("INTERVAL", "1"))
+    except ValueError:
+        n = 1
+    if n == 1:
+        human = {"minute": "Every minute", "hour": "Hourly", "day": "Daily",
+                 "week": "Weekly", "month": "Monthly", "year": "Yearly"}[unit]
+    else:
+        human = f"Every {n} {unit}s"
+    if parts.get("FREQ") == "WEEKLY" and parts.get("BYDAY"):
+        human += f" on {parts['BYDAY']}"
+    return human
+
+
+def _to_local(timestamp: str) -> str:
+    """Render an RFC3339/UTC timestamp in the operator's local timezone.
+
+    Uses the short zone abbreviation when the OS provides one (e.g. ``EDT`` on
+    macOS/Linux) and falls back to a numeric offset (e.g. ``-04:00`` on Windows,
+    where ``%Z`` would otherwise expand to "Eastern Daylight Time").
+    """
+    from datetime import datetime, timezone
+
+    if not timestamp:
+        return ""
+    try:
+        dt = datetime.fromisoformat(timestamp.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return timestamp  # unparseable - better to show the raw value than nothing
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone()
+    name = local.tzname() or ""
+    if not name or " " in name or len(name) > 5:
+        offset = local.strftime("%z")  # -0400
+        name = (offset[:3] + ":" + offset[3:]) if offset else ""
+    return f"{local:%Y-%m-%d %H:%M} {name}".strip()
+
+
+def _collection_summary(event: dict) -> str:
+    """Compact list of which data types a schedule collects (or ``(none)``)."""
+    enabled = [label for key, label in _COLLECTION_LABELS.items() if event.get(key)]
+    return ", ".join(enabled) if enabled else "(none)"
+
+
 @app.command()
 def events(ctx: typer.Context) -> None:
-    """List scheduled collection events / schedules (GET /api/v2/events)."""
-    output(ctx, run(ctx, lambda c: c.get_events()), title="Schedules")
+    """List collection schedules: when each client next collects, and what.
+
+    This is the *schedule* - the recurrence and which data each run gathers. It's
+    distinct from [bold]bhe jobs[/bold], which lists the actual collection *runs*
+    and their status. Times are shown in your local timezone.
+    """
+
+    async def _go(c):
+        return await c.get_events(), await c.get_clients()
+
+    raw_events, clients = run(ctx, _go)
+    by_id = {cl.get("id"): cl for cl in clients}
+    rows = [
+        {
+            "id": ev.get("id"),
+            "client": by_id.get(ev.get("client_id"), {}).get("name") or ev.get("client_id", ""),
+            "hostname": by_id.get(ev.get("client_id"), {}).get("hostname", ""),
+            "cadence": _humanize_rrule(ev.get("rrule", "")),
+            "next_run": _to_local(ev.get("next_scheduled_at", "")),
+            "collects": _collection_summary(ev),
+        }
+        for ev in raw_events
+    ]
+    output(
+        ctx,
+        rows,
+        columns=["id", "client", "hostname", "cadence", "next_run", "collects"],
+        title="Schedules",
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -550,6 +719,10 @@ def choke(
     tier_zero: bool = typer.Option(
         False, "--tier-zero", "-z", help="Seed from ALL Tier Zero nodes."
     ),
+    domain: str = typer.Option(
+        None, "--domain", "-d",
+        help="Scope the Tier-Zero seeds to one domain (name or id). Implies --tier-zero.",
+    ),
     max_depth: int = typer.Option(4, "--max-depth", help="Backward hops to walk."),
     top: int = typer.Option(10, "--top", "-n", help="Max choke points to show."),
     fanin: int = typer.Option(
@@ -562,15 +735,18 @@ def choke(
 
     Walks BACKWARD from the target (or all of Tier Zero) in bounded, batched hops
     so it never issues a global path query that would time out, then ranks the
-    highest-leverage nodes to remediate first.
+    highest-leverage nodes to remediate first.  Pass ``--domain`` to funnel into a
+    single domain's Tier Zero (work one domain at a time).
     """
+    if domain and not target:
+        tier_zero = True  # a domain scope is meaningless without a Tier-Zero seed
     if not target and not tier_zero:
-        err_console.print("[red]Give a target name/id, or pass --tier-zero.[/red]")
+        err_console.print("[red]Give a target name/id, or pass --tier-zero / --domain.[/red]")
         raise typer.Exit(code=2)
 
     snapshot, cache_age = scoped_snapshot(
         ctx, target=target, tier_zero=tier_zero, max_depth=max_depth, fanin=fanin,
-        refresh=refresh, concurrency=concurrency,
+        domain=domain, refresh=refresh, concurrency=concurrency,
     )
     if snapshot is None or not snapshot.nodes:
         err_console.print("[yellow]No seeds resolved / nothing reaches the target.[/yellow]")
@@ -638,6 +814,10 @@ def leaks(
     tier_zero: bool = typer.Option(
         True, "--tier-zero/--no-tier-zero", "-z", help="Seed from ALL Tier Zero nodes."
     ),
+    domain: str = typer.Option(
+        None, "--domain", "-d",
+        help="Scope the Tier-Zero seeds to one domain (name or id) - leaks INTO it.",
+    ),
     max_depth: int = typer.Option(4, "--max-depth", help="Backward hops to walk."),
     fanin: int = typer.Option(50, "--fanin", help="Mass-node truncation threshold."),
     refresh: bool = typer.Option(False, "--refresh", help="Ignore any cached snapshot."),
@@ -646,7 +826,8 @@ def leaks(
     """Show cross-domain / cross-platform edges that leak into the target set.
 
     Surfaces where one domain (or Entra/Okta/etc.) reaches into another's crown
-    jewels - the boundary crossings to prioritise.
+    jewels - the boundary crossings to prioritise.  ``--domain`` narrows it to the
+    crossings that leak into one domain's Tier Zero.
     """
     if not target and not tier_zero:
         err_console.print("[red]Give a target name/id, or pass --tier-zero.[/red]")
@@ -654,7 +835,7 @@ def leaks(
 
     snapshot, cache_age = scoped_snapshot(
         ctx, target=target, tier_zero=tier_zero, max_depth=max_depth, fanin=fanin,
-        refresh=refresh, concurrency=concurrency,
+        domain=domain, refresh=refresh, concurrency=concurrency,
     )
     if snapshot is None or not snapshot.nodes:
         err_console.print("[yellow]No seeds resolved / nothing reaches the target.[/yellow]")
@@ -667,8 +848,10 @@ def leaks(
         lambda: {"count": 0, "edges": set(), "into_t0": False}
     )
     for e in snapshot.edges:
-        from_dom = snapshot.nodes[e.source].domain or "?"
-        to_dom = snapshot.nodes[e.target].domain or "?"
+        src = snapshot.nodes[e.source]
+        tgt = snapshot.nodes[e.target]
+        from_dom = domain_of(src.name, src.kind, src.domain)
+        to_dom = domain_of(tgt.name, tgt.kind, tgt.domain)
         if from_dom == to_dom:
             continue
         bucket = agg[(from_dom, to_dom)]
@@ -698,6 +881,11 @@ def leaks(
         columns=["from_domain", "to_domain", "crossings", "into_tier_zero", "edges"],
         title="Cross-domain leakage",
     )
+    console.print(
+        "[dim]into_tier_zero = the crossing lands directly on a Tier Zero asset; "
+        '"no" rows still reach Tier Zero, but via an intermediary. '
+        "(unknown) = a node BHE left without a domain.[/dim]"
+    )
 
 
 @app.command()
@@ -708,6 +896,10 @@ def map(
     ),
     tier_zero: bool = typer.Option(
         False, "--tier-zero", "-z", help="Seed from ALL Tier Zero nodes."
+    ),
+    domain: str = typer.Option(
+        None, "--domain", "-d",
+        help="Scope the Tier-Zero seeds to one domain (name or id). Implies --tier-zero.",
     ),
     fmt: str = typer.Option("mermaid", "--format", "-f", help="mermaid | dot"),
     max_depth: int = typer.Option(4, "--max-depth", help="Backward hops to walk."),
@@ -721,17 +913,20 @@ def map(
     """Emit a condensed, bundled attack-graph (Mermaid/DOT) of the funnel into T0.
 
     Choke points and Tier Zero are highlighted; large leaf-source fan-ins collapse
-    into ``(N principals)`` meta-nodes - the visual remediation plan.
+    into ``(N principals)`` meta-nodes - the visual remediation plan.  ``--domain``
+    scopes the funnel to one domain's Tier Zero.
     """
     from bhe.render import to_dot, to_mermaid
 
+    if domain and not target:
+        tier_zero = True  # a domain scope is meaningless without a Tier-Zero seed
     if not target and not tier_zero:
-        err_console.print("[red]Give a target name/id, or pass --tier-zero.[/red]")
+        err_console.print("[red]Give a target name/id, or pass --tier-zero / --domain.[/red]")
         raise typer.Exit(code=2)
 
     snapshot, cache_age = scoped_snapshot(
         ctx, target=target, tier_zero=tier_zero, max_depth=max_depth, fanin=fanin,
-        refresh=refresh, concurrency=concurrency,
+        domain=domain, refresh=refresh, concurrency=concurrency,
     )
     if snapshot is None or not snapshot.nodes:
         err_console.print("[yellow]No seeds resolved / nothing reaches the target.[/yellow]")

@@ -368,6 +368,49 @@ def edges_from_response(response: dict) -> list[Edge]:
     return out
 
 
+# Machine-scoped kinds whose names are ``label@HOST.DOMAIN`` / ``HOST.DOMAIN``
+# (BHE often leaves their ``domain`` property blank), so we drop the host label.
+_LOCAL_KINDS = {"adlocalgroup", "localgroup", "localuser", "computer"}
+
+
+def domain_of(name: str, kind: str = "", domain: str = "") -> str:
+    """Best-effort domain for a node, used to bucket cross-domain crossings.
+
+    Prefers BHE's ``domain`` property.  When it's blank - which is exactly why
+    ``leaks`` used to show ``?`` for local-group/-user and computer-local objects
+    that don't carry one - we derive it from the node name: the suffix after
+    ``@`` (or the DNS suffix of a bare FQDN), dropping the leading host label for
+    machine-scoped kinds.  Returns ``"(unknown)"`` when nothing usable is present,
+    so unrelated domain-less nodes aren't all merged under one ``?`` bucket.
+    """
+    if domain and domain.strip():
+        return domain.strip()
+    n = (name or "").strip()
+    suffix = (n.rsplit("@", 1)[1] if "@" in n else n).strip().strip(".")
+    if "." not in suffix:
+        return "(unknown)"
+    labels = suffix.split(".")
+    if (kind or "").lower() in _LOCAL_KINDS and len(labels) > 2:
+        labels = labels[1:]  # strip the host label off HOST.DOMAIN
+    return ".".join(labels).upper()
+
+
+def seeds_in_domain(
+    seeds: dict[str, tuple], aliases: set[str]
+) -> dict[str, tuple[str, ...]]:
+    """Keep only seeds whose domain matches one of ``aliases`` (already lowercased).
+
+    ``aliases`` is typically ``{domain_name, domain_sid}`` from the resolved
+    domain, so a Tier-Zero seed set can be narrowed to one domain for "work one
+    domain at a time" scoping.  Seeds with no domain are dropped under a filter.
+    """
+    return {
+        oid: meta
+        for oid, meta in seeds.items()
+        if (meta[2] if len(meta) > 2 else "").strip().lower() in aliases
+    }
+
+
 def seeds_from_response(response: dict) -> dict[str, tuple[str, str, str]]:
     """Parse a node-returning graph response into ``{objectid: (name, kind, domain)}``."""
     nodes, _ = parse_graph(response)
