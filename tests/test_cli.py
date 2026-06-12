@@ -116,6 +116,43 @@ def test_rrule_humanizer() -> None:
     assert _humanize_rrule("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE") == "Weekly on MO,WE"
 
 
+def test_audit_lists_entries_with_domainless_usernames() -> None:
+    result = _invoke("--mock", "--json", "audit", "--since", "2000-01-01T00:00:00Z")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert len(rows) == 3
+    # Newest first, and the email domain is stripped to a bare username.
+    assert rows[0]["user"] == "graysonphill"
+    assert rows[0]["action"] == "LoginAttempt"
+
+
+def test_audit_logins_only() -> None:
+    result = _invoke("--mock", "--json", "audit", "--logins", "--since", "2000-01-01T00:00:00Z")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert {r["action"] for r in rows} == {"LoginAttempt"}  # CreateAuthToken filtered out
+    assert len(rows) == 2
+
+
+def test_audit_user_filter() -> None:
+    result = _invoke("--mock", "--json", "audit", "--user", "mallory", "--since", "2000-01-01T00:00:00Z")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert len(rows) == 1
+    assert rows[0]["user"] == "mallory"
+    assert rows[0]["status"] == "failure"
+
+
+def test_audit_last_per_user() -> None:
+    result = _invoke("--mock", "--json", "audit", "--last-per-user", "--since", "2000-01-01T00:00:00Z")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    # One row per actor; the most recent event for each.
+    assert len(rows) == 2
+    grayson = next(r for r in rows if r["user"] == "graysonphill")
+    assert grayson["action"] == "LoginAttempt"  # 06-12 login beats the 06-11 token
+
+
 def test_jobs_correlated_to_client() -> None:
     result = _invoke("--mock", "--json", "jobs")
     assert result.exit_code == 0

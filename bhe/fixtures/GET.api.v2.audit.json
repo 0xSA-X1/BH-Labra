@@ -1,0 +1,37 @@
+{
+  "count": 3,
+  "limit": 200,
+  "skip": 0,
+  "data": [
+    {
+      "id": 3,
+      "created_at": "2026-06-12T09:15:00Z",
+      "actor_id": "a0ddb897-55f0-4046-9c3d-94d9966e9ae3",
+      "actor_name": "Grayson Phill",
+      "actor_email": "graysonphill@gmail.com",
+      "action": "LoginAttempt",
+      "status": "success",
+      "source_ip_address": "10.0.0.5"
+    },
+    {
+      "id": 2,
+      "created_at": "2026-06-11T22:40:00Z",
+      "actor_id": "a0ddb897-55f0-4046-9c3d-94d9966e9ae3",
+      "actor_name": "Grayson Phill",
+      "actor_email": "graysonphill@gmail.com",
+      "action": "CreateAuthToken",
+      "status": "success",
+      "source_ip_address": "10.0.0.5"
+    },
+    {
+      "id": 1,
+      "created_at": "2026-06-10T08:00:00Z",
+      "actor_id": "7496d772-30d2-4c1b-92e6-dde2e1ef787e",
+      "actor_name": "Mallory",
+      "actor_email": "mallory@corp.local",
+      "action": "LoginAttempt",
+      "status": "failure",
+      "source_ip_address": "10.0.0.9"
+    }
+  ]
+}

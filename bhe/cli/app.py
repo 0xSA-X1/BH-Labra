@@ -655,6 +655,133 @@ def events(ctx: typer.Context) -> None:
 
 
 # ----------------------------------------------------------------------------
+# Audit log
+# ----------------------------------------------------------------------------
+
+
+def _audit_entries(raw) -> list:
+    """Unwrap the audit envelope into a flat list (``data`` / ``data.logs`` / list)."""
+    data = raw.get("data", raw) if isinstance(raw, dict) else raw
+    if isinstance(data, dict):
+        for key in ("logs", "audit_logs", "entries"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _ci_get(entry, *keys: str):
+    """First non-empty value among case-insensitive key variants (version-tolerant)."""
+    if not isinstance(entry, dict):
+        return ""
+    low = {k.lower(): v for k, v in entry.items()}
+    for key in keys:
+        val = low.get(key.lower())
+        if val not in (None, ""):
+            return val
+    return ""
+
+
+def _strip_domain(name) -> str:
+    """Username without its domain qualifier: ``CORP\\u`` / ``u@corp.local`` -> ``u``."""
+    s = str(name or "")
+    if "\\" in s:
+        s = s.rsplit("\\", 1)[1]
+    if "@" in s:
+        s = s.split("@", 1)[0]
+    return s
+
+
+def _audit_actor(entry) -> str:
+    """Best actor identifier for an audit entry (a username/email, then a name)."""
+    return str(_ci_get(entry, "actor_email", "actor_principal", "actor_name", "actor", "actor_id"))
+
+
+# Substrings that mark a login action.  Deliberately narrow ("auth" would also
+# match CreateAuthToken); for any tenant-specific naming, use --action <name>.
+_LOGIN_TOKENS = ("login", "logon", "signin")
+
+
+def _is_login(action) -> bool:
+    """True if an action looks like an authentication/login event."""
+    a = str(action).lower()
+    return any(tok in a for tok in _LOGIN_TOKENS)
+
+
+@app.command()
+def audit(
+    ctx: typer.Context,
+    user: str = typer.Option(
+        None, "--user", "-u", help="Filter to one actor (name/email substring)."
+    ),
+    action: str = typer.Option(
+        None, "--action", "-a", help="Filter to an action substring (e.g. login)."
+    ),
+    logins: bool = typer.Option(False, "--logins", help="Only authentication/login events."),
+    days: int = typer.Option(7, "--days", help="Look back this many days."),
+    since: str = typer.Option(None, "--since", help="RFC3339/ISO start time (overrides --days)."),
+    limit: int = typer.Option(200, "--limit", "-n", help="Max entries to fetch."),
+    last_per_user: bool = typer.Option(
+        False, "--last-per-user", help="Most recent event per actor (a 'last login' view)."
+    ),
+) -> None:
+    """Platform audit log: who logged in / acted, and when (shown in local time).
+
+    Filtering is done client-side so it's robust across BHE versions; usernames
+    are shown without their domain. Use ``--logins`` for authentication events,
+    ``--user`` to scope to one actor, or ``--last-per-user`` for a 'who logged in
+    last' summary.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = since or (
+        (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    )
+    params = {"after": cutoff, "limit": limit, "sort_by": "-created_at"}
+    raw = run(ctx, lambda c: c.get_audit_log(params=params))
+
+    entries = _audit_entries(raw)
+    # Belt-and-suspenders client-side window + newest-first sort (ISO-UTC strings
+    # sort lexicographically), so we don't depend on the server honouring after/sort.
+    entries = [e for e in entries if str(_ci_get(e, "created_at", "timestamp")) >= cutoff]
+    entries.sort(key=lambda e: str(_ci_get(e, "created_at", "timestamp")), reverse=True)
+
+    if logins:
+        entries = [e for e in entries if _is_login(_ci_get(e, "action"))]
+    if action:
+        entries = [e for e in entries if action.lower() in str(_ci_get(e, "action")).lower()]
+    if user:
+        needle = user.lower()
+        entries = [
+            e for e in entries
+            if needle in " ".join(
+                str(_ci_get(e, k)) for k in
+                ("actor_email", "actor_name", "actor", "actor_id", "actor_principal")
+            ).lower()
+        ]
+    if last_per_user:
+        seen: dict = {}
+        for e in entries:  # already newest-first
+            seen.setdefault(_audit_actor(e), e)
+        entries = list(seen.values())
+
+    rows = [
+        {
+            "time": _to_local(str(_ci_get(e, "created_at", "timestamp"))),
+            "user": _strip_domain(_audit_actor(e)),
+            "action": _ci_get(e, "action"),
+            "status": _ci_get(e, "status", "result"),
+            "source": _ci_get(e, "source_ip_address", "source", "source_addr", "remote_addr"),
+        }
+        for e in entries[:limit]
+    ]
+    scope = " - logins" if logins else ""
+    if user:
+        scope += f" - {user}"
+    output(ctx, rows, columns=["time", "user", "action", "status", "source"], title=f"Audit log{scope}")
+
+
+# ----------------------------------------------------------------------------
 # Search / entities
 # ----------------------------------------------------------------------------
 

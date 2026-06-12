@@ -20,6 +20,7 @@ import httpx
 
 from bhe.api.groups.analysis import AnalysisMixin
 from bhe.api.groups.attack_paths import AttackPathsMixin
+from bhe.api.groups.audit import AuditMixin
 from bhe.api.groups.clients import ClientsMixin
 from bhe.api.groups.entities import EntitiesMixin
 from bhe.api.groups.events import EventsMixin
@@ -321,6 +322,7 @@ class BHEClient(
     ClientsMixin,
     JobsMixin,
     EventsMixin,
+    AuditMixin,
     AttackPathsMixin,
     PostureMixin,
     MetaMixin,
