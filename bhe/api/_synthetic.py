@@ -102,3 +102,41 @@ def synthetic_cypher_response(query: str) -> dict[str, Any] | None:
     if "admin_tier_0" in query and "MATCH (n)" in query:
         return tier_zero_payload()
     return None
+
+
+# Per-domain finding aggregates the mock's ``/details`` endpoint serves, keyed by
+# finding type, so ``bhe --mock triage`` / ``findings`` exercise real per-type
+# ranking against the BHE-shaped ``{count, data:[{Severity, ImpactPercentage}]}``
+# envelope (the same estate is served for every domain).
+DETAILS: dict[str, dict[str, Any]] = {
+    "DCSync": {"severity": "critical", "count": 2, "impact": 0.91},
+    "Kerberoasting": {"severity": "high", "count": 3, "impact": 0.34},
+    "ASREPRoasting": {"severity": "medium", "count": 1, "impact": 0.12},
+}
+
+
+def available_types_payload() -> dict[str, Any]:
+    """Response for a domain's available finding types (``available-types``)."""
+    return {"data": list(DETAILS)}
+
+
+def details_payload(finding: str | None) -> dict[str, Any]:
+    """BHE-shaped ``/details`` envelope for one finding type (or an empty page)."""
+    spec = DETAILS.get(finding or "")
+    if spec is None:
+        return {"count": 0, "limit": 1, "skip": 0, "data": []}
+    return {
+        "count": spec["count"],
+        "limit": 1,
+        "skip": 0,
+        "data": [
+            {
+                "Finding": finding,
+                "Severity": spec["severity"],
+                "ImpactPercentage": spec["impact"],
+                "Accepted": False,
+                "PrincipalName": f"SAMPLE-{finding}@CORP.LOCAL",
+                "Props": {"name": f"SAMPLE-{finding}@CORP.LOCAL"},
+            }
+        ],
+    }

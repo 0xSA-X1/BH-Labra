@@ -92,8 +92,8 @@ def test_findings_by_domain_name() -> None:
     result = _invoke("--mock", "--json", "findings", "CORP.LOCAL")
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
-    # Per finding-type counts (available-types -> findings per type).
-    assert any(r["finding"] == "Kerberoastable" and r["principals"] >= 1 for r in rows)
+    # Per finding-type counts come from the /details envelope `count`.
+    assert any(r["finding"] == "Kerberoasting" and r["principals"] == 3 for r in rows)
 
 
 def test_events_humanized_and_client_correlated() -> None:
@@ -155,13 +155,14 @@ def test_triage_ranks_findings_across_domains() -> None:
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
     assert rows
-    # Finding-centric now (not domain-by-exposure); critical DCSync ranks first.
+    # Finding-centric; critical DCSync ranks first.
     assert rows[0]["finding"] == "DCSync"
     assert rows[0]["severity"] == "critical"
-    # Scored descending, and accepted-risk findings are excluded by default.
+    # principals is the /details envelope `count`, not a page length.
+    assert rows[0]["principals"] == 2
+    assert {"impact", "score", "domain"} <= rows[0].keys()
     scores = [r["score"] for r in rows]
     assert scores == sorted(scores, reverse=True)
-    assert not any(r["finding"] == "Unconstrained Delegation" for r in rows)
 
 
 def test_triage_by_type_rolls_up_domains() -> None:

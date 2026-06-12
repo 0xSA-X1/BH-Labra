@@ -141,8 +141,8 @@ class BHETransport:
         request.headers.update(
             self._auth.sign_request(method=method, uri=signed_uri, body=body)
         )
-        # Ask for JSON explicitly: some BHE endpoints (e.g. attack-path-findings)
-        # default to CSV.  Headers aren't part of the HMAC, so this is signing-safe.
+        # Ask for JSON explicitly rather than rely on a server default.  Headers
+        # aren't part of the HMAC, so this is signing-safe.
         request.headers["Accept"] = "application/json"
         return await self._http.send(request)
 

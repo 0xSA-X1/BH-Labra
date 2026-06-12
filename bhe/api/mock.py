@@ -87,6 +87,17 @@ class MockTransport:
             if synthetic is not None:
                 return httpx.Response(200, json=synthetic)
 
+        # Per-domain findings are served synthetically (keyed by the `finding`
+        # param) so triage/findings exercise real per-type ranking.
+        if method.upper() == "GET" and "/domains/" in path:
+            from bhe.api._synthetic import available_types_payload, details_payload
+
+            if path.endswith("/available-types"):
+                return httpx.Response(200, json=available_types_payload())
+            if path.endswith("/details"):
+                finding = (params or {}).get("finding")
+                return httpx.Response(200, json=details_payload(finding))
+
         fixture = self._match(method, endpoint)
         if fixture is None:
             return httpx.Response(

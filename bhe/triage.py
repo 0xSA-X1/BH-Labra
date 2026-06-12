@@ -1,27 +1,30 @@
-"""Cross-domain triage: turn BHE's precomputed findings into a 'start here' list.
+"""Cross-domain triage: rank a multi-domain estate's findings into a 'start here' list.
 
-BHE already runs the expensive attack-path analysis and exposes the result per
-domain (``attack-path-findings``).  The gap this fills is that the BHE UI won't
-rank findings *across* a 10+ domain estate in one view.  This module is pure and
-UI-agnostic (like :mod:`bhe.diagnostics`): it takes ``(domain, findings)`` pairs
-and produces a ranked, scored prioritisation — no Cypher, no timeout risk.
+BHE exposes a domain's findings at ``GET /domains/{id}/details?finding=<type>``.
+The paginated envelope's ``count`` is the affected-principal total, and each record
+carries ``Severity`` and ``ImpactPercentage`` - so one cheap ``limit=1`` call per
+finding type yields everything we need to rank, without paging huge ``Props`` blobs.
+
+This module is pure and UI-agnostic (like :mod:`bhe.diagnostics`): it takes
+per-(domain, finding-type) aggregates and ranks them across the whole estate - the
+cross-domain "where to start" view BHE's per-domain UI lacks.
 
 Scoring is intentionally simple and transparent so it's defensible to a customer:
 
-    score = severity_weight * active_principals * (1 + max_exposure)
+    score = severity_weight * affected_principals * (1 + impact)
 
-where accepted-risk findings are excluded by default (they're a deliberate
-business decision, not unremediated exposure).
+where ``impact`` is BHE's ImpactPercentage (blast radius) for a representative
+principal of that finding.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 # Severity → weight.  Spread so a single critical outranks a pile of lows, but a
-# large population of highs can still surface above one low-exposure critical.
+# large population of highs can still surface above one low-impact critical.
 SEVERITY_WEIGHT: dict[str, int] = {
     "critical": 100,
     "high": 10,
@@ -34,104 +37,63 @@ def severity_rank(severity: str) -> int:
     return SEVERITY_WEIGHT.get((severity or "").lower(), 0)
 
 
-def score(severity: str, principals: int, max_exposure: float) -> float:
+def finding_score(severity: str, principals: int, impact: float) -> float:
     """The transparent prioritisation score (see module docstring)."""
-    return severity_rank(severity) * max(principals, 0) * (1.0 + max_exposure)
+    return severity_rank(severity) * max(principals, 0) * (1.0 + max(impact, 0.0))
 
 
 @dataclass(slots=True)
-class TriageRow:
-    """One (finding-type, domain) bucket, scored for prioritisation."""
+class FindingStat:
+    """One (finding-type, domain) aggregate, scored for prioritisation."""
 
     finding: str
     domain: str
     severity: str
-    principals: int          # active (non-accepted) principals with this finding
-    accepted: int            # how many were accepted-risk (shown, not scored)
-    max_exposure: float
-    score: float
+    principals: int       # affected-principal total (the /details envelope `count`)
+    impact: float         # representative ImpactPercentage (0..1)
+
+    @property
+    def score(self) -> float:
+        return finding_score(self.severity, self.principals, self.impact)
 
     def as_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["max_exposure"] = round(self.max_exposure, 3)
-        d["score"] = round(self.score, 1)
-        return d
+        return {
+            "finding": self.finding,
+            "domain": self.domain,
+            "severity": self.severity,
+            "principals": self.principals,
+            "impact": round(self.impact, 3),
+            "score": round(self.score, 1),
+        }
 
 
-def _findings_list(findings: Any) -> list[dict[str, Any]]:
-    """Accept either the raw ``{"data": [...]}`` envelope or a bare list."""
-    if isinstance(findings, dict):
-        return findings.get("data", []) or []
-    return findings or []
+def rank(stats: Iterable[FindingStat]) -> list[FindingStat]:
+    """Worst-first ranking across the estate."""
+    return sorted(stats, key=lambda s: s.score, reverse=True)
 
 
-def summarize(
-    per_domain: Iterable[tuple[dict[str, Any], Any]],
-    *,
-    include_accepted: bool = False,
-) -> list[TriageRow]:
-    """Rank findings across domains, worst first.
-
-    Args:
-        per_domain: iterable of ``(domain_record, findings)`` where ``findings``
-            is the attack-path-findings payload (envelope or list).
-        include_accepted: if False (default), accepted-risk findings are excluded
-            from the score (but still counted in the ``accepted`` column).
-    """
-    rows: list[TriageRow] = []
-    for domain, raw in per_domain:
-        domain_name = domain.get("name", domain.get("id", "?"))
-        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for f in _findings_list(raw):
-            groups[f.get("finding", "?")].append(f)
-
-        for finding, items in groups.items():
-            active = [i for i in items if not i.get("accepted")]
-            accepted = len(items) - len(active)
-            scored = items if include_accepted else active
-            if not scored:
-                continue
-            worst = max((i.get("severity", "low") for i in scored), key=severity_rank)
-            principals = len(scored)
-            max_exp = max((float(i.get("exposure") or 0.0) for i in scored), default=0.0)
-            rows.append(
-                TriageRow(
-                    finding=finding,
-                    domain=domain_name,
-                    severity=worst,
-                    principals=principals,
-                    accepted=accepted,
-                    max_exposure=max_exp,
-                    score=score(worst, principals, max_exp),
-                )
-            )
-    rows.sort(key=lambda r: r.score, reverse=True)
-    return rows
-
-
-def rollup_by_type(rows: Iterable[TriageRow]) -> list[dict[str, Any]]:
-    """Collapse per-domain rows into one row per finding type (estate-wide)."""
+def rollup_by_type(stats: Iterable[FindingStat]) -> list[dict[str, Any]]:
+    """Collapse per-domain stats into one row per finding type (estate-wide)."""
     agg: dict[str, dict[str, Any]] = {}
-    for r in rows:
+    for s in stats:
         b = agg.setdefault(
-            r.finding,
-            {"finding": r.finding, "severity": r.severity, "domains": set(),
-             "principals": 0, "max_exposure": 0.0, "score": 0.0},
+            s.finding,
+            {"finding": s.finding, "severity": s.severity, "domains": set(),
+             "principals": 0, "impact": 0.0},
         )
-        b["domains"].add(r.domain)
-        b["principals"] += r.principals
-        b["max_exposure"] = max(b["max_exposure"], r.max_exposure)
-        b["score"] += r.score
-        if severity_rank(r.severity) > severity_rank(b["severity"]):
-            b["severity"] = r.severity
+        b["domains"].add(s.domain)
+        b["principals"] += s.principals
+        b["impact"] = max(b["impact"], s.impact)
+        if severity_rank(s.severity) > severity_rank(b["severity"]):
+            b["severity"] = s.severity
     out = [
         {
             "finding": b["finding"],
             "severity": b["severity"],
             "domains": len(b["domains"]),
             "principals": b["principals"],
-            "max_exposure": round(b["max_exposure"], 3),
-            "score": round(b["score"], 1),
+            "impact": round(b["impact"], 3),
+            "score": round(finding_score(b["severity"], b["principals"], b["impact"]), 1),
         }
         for b in agg.values()
     ]
@@ -139,9 +101,9 @@ def rollup_by_type(rows: Iterable[TriageRow]) -> list[dict[str, Any]]:
     return out
 
 
-def severity_totals(rows: Iterable[TriageRow]) -> dict[str, int]:
-    """Count active principals by severity across all rows (for a summary line)."""
+def severity_totals(stats: Iterable[FindingStat]) -> dict[str, int]:
+    """Count affected principals by severity across all stats (for a summary line)."""
     totals: dict[str, int] = defaultdict(int)
-    for r in rows:
-        totals[r.severity.lower()] += r.principals
+    for s in stats:
+        totals[(s.severity or "").lower()] += s.principals
     return dict(totals)

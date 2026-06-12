@@ -1,73 +1,65 @@
-"""Tests for the cross-domain triage scoring engine."""
+"""Tests for the cross-domain triage scoring engine (aggregate model)."""
 
 from __future__ import annotations
 
 from bhe.triage import (
+    FindingStat,
+    finding_score,
+    rank,
     rollup_by_type,
-    score,
+    severity_rank,
     severity_totals,
-    summarize,
-)
-
-# Two domains; CORP has a critical (DCSync) + a high (Kerberoastable) + an
-# accepted high (Unconstrained); DEV has only the high.
-_CORP = (
-    {"name": "CORP.LOCAL", "id": "S-1-corp"},
-    {
-        "data": [
-            {"finding": "DCSync", "severity": "critical", "accepted": False, "exposure": 0.9},
-            {"finding": "Kerberoastable", "severity": "high", "accepted": False, "exposure": 0.3},
-            {"finding": "Kerberoastable", "severity": "high", "accepted": False, "exposure": 0.5},
-            {"finding": "Unconstrained", "severity": "high", "accepted": True, "exposure": 0.2},
-        ]
-    },
-)
-_DEV = (
-    {"name": "DEV.LOCAL", "id": "S-1-dev"},
-    [{"finding": "Kerberoastable", "severity": "high", "accepted": False, "exposure": 0.1}],
 )
 
 
-def test_score_formula() -> None:
-    # critical(100) * 2 principals * (1 + 0.5 exposure) = 300
-    assert score("critical", 2, 0.5) == 300
-    assert score("low", 1, 0.0) == 1
-    assert score("unknown", 5, 0.9) == 0  # unknown severity -> weight 0
+def _stat(finding, domain, severity, principals, impact) -> FindingStat:
+    return FindingStat(
+        finding=finding, domain=domain, severity=severity,
+        principals=principals, impact=impact,
+    )
 
 
-def test_summarize_ranks_critical_first_and_excludes_accepted() -> None:
-    rows = summarize([_CORP, _DEV])
-    # DCSync (critical) must outrank everything.
-    assert rows[0].finding == "DCSync"
-    # The accepted Unconstrained finding is not scored as active.
-    assert not any(r.finding == "Unconstrained" for r in rows)
-    # CORP Kerberoastable groups its 2 active principals, max_exposure 0.5.
-    corp_kerb = next(r for r in rows if r.finding == "Kerberoastable" and r.domain == "CORP.LOCAL")
-    assert corp_kerb.principals == 2
-    assert corp_kerb.max_exposure == 0.5
+# An estate: CORP has a critical (DCSync) + a high (Kerberoasting); DEV has the
+# same high (fewer principals) + a medium.
+_STATS = [
+    _stat("DCSync", "CORP.LOCAL", "critical", 2, 0.9),
+    _stat("Kerberoasting", "CORP.LOCAL", "high", 5, 0.3),
+    _stat("Kerberoasting", "DEV.LOCAL", "high", 1, 0.1),
+    _stat("ASREPRoasting", "DEV.LOCAL", "medium", 3, 0.2),
+]
 
 
-def test_accepted_counted_but_not_scored() -> None:
-    rows = summarize([_CORP, _DEV])
-    # Unconstrained is all-accepted -> excluded entirely by default.
-    assert not any(r.finding == "Unconstrained" for r in rows)
-    # With include_accepted it appears.
-    rows2 = summarize([_CORP, _DEV], include_accepted=True)
-    assert any(r.finding == "Unconstrained" for r in rows2)
+def test_finding_score_formula() -> None:
+    # critical(100) * 2 principals * (1 + 0.5 impact) = 300
+    assert finding_score("critical", 2, 0.5) == 300
+    assert finding_score("low", 1, 0.0) == 1
+    assert finding_score("unknown", 5, 0.9) == 0  # unknown severity -> weight 0
+
+
+def test_severity_rank_orders() -> None:
+    assert severity_rank("critical") > severity_rank("high")
+    assert severity_rank("high") > severity_rank("medium") > severity_rank("low")
+    assert severity_rank("bogus") == 0
+
+
+def test_rank_puts_critical_first() -> None:
+    ranked = rank(_STATS)
+    assert ranked[0].finding == "DCSync"  # 100 * 2 * 1.9 = 380, the top
+    scores = [s.score for s in ranked]
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_rollup_by_type_collapses_domains() -> None:
-    rows = summarize([_CORP, _DEV])
-    rolled = rollup_by_type(rows)
-    kerb = next(r for r in rolled if r["finding"] == "Kerberoastable")
+    rolled = rollup_by_type(_STATS)
+    kerb = next(r for r in rolled if r["finding"] == "Kerberoasting")
     assert kerb["domains"] == 2          # CORP + DEV
-    assert kerb["principals"] == 3       # 2 + 1
-    assert kerb["max_exposure"] == 0.5
-    # DCSync (critical) still ranks first overall.
-    assert rolled[0]["finding"] == "DCSync"
+    assert kerb["principals"] == 6       # 5 + 1
+    assert kerb["impact"] == 0.3         # max across domains
+    assert rolled[0]["finding"] == "DCSync"  # critical still ranks first
 
 
-def test_severity_totals() -> None:
-    totals = severity_totals(summarize([_CORP, _DEV]))
-    assert totals["critical"] == 1
-    assert totals["high"] == 3  # 2 CORP + 1 DEV active kerberoastable principals
+def test_severity_totals_counts_principals() -> None:
+    totals = severity_totals(_STATS)
+    assert totals["critical"] == 2
+    assert totals["high"] == 6  # 5 CORP + 1 DEV
+    assert totals["medium"] == 3

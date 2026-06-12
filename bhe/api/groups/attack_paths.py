@@ -42,17 +42,18 @@ class AttackPathsMixin(GroupMixin):
             await self._request("GET", "/api/v2/attack-path-types")
         ) or []
 
-    async def get_domain_attack_path_findings(
+    async def get_domain_findings(
         self, domain_id: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Get a domain's findings (``GET /api/v2/domains/{id}/attack-path-findings``)."""
-        return await self._request(
-            "GET", f"/api/v2/domains/{domain_id}/attack-path-findings", params=params
-        )
+        """List a domain's findings for one type (``GET /api/v2/domains/{id}/details``).
 
-    async def get_domain_details(self, domain_id: str) -> dict[str, Any]:
-        """Get a domain's attack-path detail (``GET /api/v2/domains/{id}/details``)."""
-        return await self._request("GET", f"/api/v2/domains/{domain_id}/details")
+        BHE's per-domain finding list lives at ``/details?finding=<type>``, where
+        ``finding`` must be a type returned by ``available-types``. The similarly
+        named ``/attack-path-findings`` route just 500s - it is NOT this.
+        """
+        return await self._request(
+            "GET", f"/api/v2/domains/{domain_id}/details", params=params
+        )
 
     async def get_domain_sparkline(
         self, domain_id: str, params: dict[str, Any] | None = None
