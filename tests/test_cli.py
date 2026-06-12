@@ -164,6 +164,17 @@ def test_hunt_ambiguous_principal_exits_2() -> None:
     assert result.exit_code == 2
 
 
+def test_hunt_path_shows_escalation_edges() -> None:
+    # The path output must show the relationships (the escalation), in order -
+    # not just an unordered node dump.
+    result = _invoke("--mock", "hunt", "path", "ALICE@CORP.LOCAL", "DC01.CORP.LOCAL")
+    assert result.exit_code == 0
+    assert "MemberOf" in result.stdout
+    assert "GenericAll" in result.stdout
+    # The escalation table has the hop columns.
+    assert "edge" in result.stdout and "step" in result.stdout
+
+
 def test_triage_ranks_findings_across_domains() -> None:
     result = _invoke("--mock", "--json", "triage")
     assert result.exit_code == 0

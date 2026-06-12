@@ -96,6 +96,39 @@ def extract_literals(response: dict[str, Any]) -> list[Any]:
     return []
 
 
+def _node_display_name(node: GraphNode) -> str:
+    """Friendly label for a graph node (name -> objectid -> label)."""
+    props = node.properties or {}
+    return props.get("name") or node.object_id or node.label or "?"
+
+
+def path_hops(response: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    """Render a graph response as ordered escalation hops - one list per path.
+
+    Each hop is ``{"step", "from", "edge", "to"}``; reading a path's rows top to
+    bottom is the escalation (who, via which edge, reaches whom).  Paths are
+    reconstructed from the flat graph and sorted shortest-first (most direct).
+    """
+    nodes, edges = parse_graph(response)
+    paths = reconstruct_paths(nodes, edges)
+    paths.sort(key=lambda p: p.length())
+
+    out: list[list[dict[str, Any]]] = []
+    for path in paths:
+        hops = [
+            {
+                "step": j + 1,
+                "from": _node_display_name(path.nodes[j]),
+                "edge": edge.kind or edge.label or "",
+                "to": _node_display_name(path.nodes[j + 1]),
+            }
+            for j, edge in enumerate(path.edges)
+        ]
+        if hops:
+            out.append(hops)
+    return out
+
+
 def reconstruct_paths(
     nodes: list[GraphNode], edges: list[GraphEdge]
 ) -> list[Path]:

@@ -6,6 +6,7 @@ from bhe.parsing.graph import (
     extract_literals,
     nodes_table,
     parse_graph,
+    path_hops,
     reconstruct_paths,
 )
 
@@ -48,6 +49,17 @@ def test_reconstruct_single_path() -> None:
     assert path.length() == 2
     assert path.nodes[0].object_id == "S-1"
     assert path.nodes[-1].object_id == "S-3"
+
+
+def test_path_hops_render_the_escalation() -> None:
+    paths = path_hops(GRAPH)
+    assert len(paths) == 1
+    hops = paths[0]
+    # Ordered escalation: ALICE -MemberOf-> HELPDESK -GenericAll-> DOMAIN ADMINS.
+    assert [h["edge"] for h in hops] == ["MemberOf", "GenericAll"]
+    assert hops[0]["from"] == "ALICE@CORP" and hops[0]["to"] == "HELPDESK@CORP"
+    assert hops[1]["to"] == "DOMAIN ADMINS@CORP"
+    assert [h["step"] for h in hops] == [1, 2]
 
 
 def test_reconstruct_handles_cycle() -> None:

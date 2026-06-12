@@ -43,6 +43,40 @@ def _render(ctx: typer.Context, result, title: str, empty: str) -> None:
         console.print(f"[dim]{empty}[/dim]")
 
 
+def _render_paths(ctx: typer.Context, result, title: str, empty: str, max_paths: int = 25) -> None:
+    """Render path results as escalation chains (the ordered source->target edges).
+
+    A node table loses the relationships AND their order; for an attack path the
+    edges *are* the answer, so we show one ``step/from/edge/to`` table per path
+    (shortest first).  Falls back to the node list if no path can be reconstructed.
+    """
+    from bhe.parsing.graph import path_hops
+
+    if settings(ctx).as_json:
+        print_json(result)
+        return
+    paths = path_hops(result)
+    if not paths:
+        rows = nodes_table(result)
+        if rows:  # nodes came back but no traversable chain - show what we have
+            output(ctx, rows, title=title)
+        else:
+            console.print(f"[dim]{empty}[/dim]")
+        return
+    for i, hops in enumerate(paths[:max_paths]):
+        suffix = (
+            f"path {i + 1}/{len(paths)}, {len(hops)} hop(s)"
+            if len(paths) > 1
+            else f"{len(hops)} hop(s)"
+        )
+        output(ctx, hops, columns=["step", "from", "edge", "to"], title=f"{title}  ({suffix})")
+    if len(paths) > max_paths:
+        console.print(
+            f"[dim]... and {len(paths) - max_paths} more path(s); "
+            "narrow with a specific target or drop --all.[/dim]"
+        )
+
+
 def _recipe(ctx: typer.Context, query: str, title: str, dry_run: bool) -> None:
     """Echo + run a domain-scoped query (no principal to resolve)."""
     if dry_run:
@@ -81,7 +115,7 @@ def _principal_recipe(ctx, *, selectors, build, dry_run, target_desc=None) -> No
         return
     err_console.print(f"[dim]{title}[/dim]")
     err_console.print(f"[dim]cypher> {query}[/dim]")
-    _render(ctx, result, title, f"(no results - no path from {names[0]} to the target set)")
+    _render_paths(ctx, result, title, f"(no results - no path from {names[0]} to the target set)")
 
 
 @hunt_app.command()
