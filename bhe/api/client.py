@@ -141,6 +141,9 @@ class BHETransport:
         request.headers.update(
             self._auth.sign_request(method=method, uri=signed_uri, body=body)
         )
+        # Ask for JSON explicitly: some BHE endpoints (e.g. attack-path-findings)
+        # default to CSV.  Headers aren't part of the HMAC, so this is signing-safe.
+        request.headers["Accept"] = "application/json"
         return await self._http.send(request)
 
     async def _request(
@@ -229,7 +232,17 @@ class BHETransport:
 
             if not response.content:
                 return {}
-            return response.json()
+            try:
+                return response.json()
+            except ValueError as exc:
+                # A 2xx with a non-JSON body (a CSV export, or an HTML/empty error
+                # page some endpoints emit) - surface it as a normal API error so
+                # callers handle it uniformly, instead of a raw JSONDecodeError
+                # tearing down an in-flight asyncio.gather and its shared client.
+                detail = f"non-JSON response body: {response.text[:200].strip()!r}"
+                raise BHEClientError(
+                    status_code=response.status_code, detail=detail
+                ) from exc
         except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised
             error = exc
             if not detail:

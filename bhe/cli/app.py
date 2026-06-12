@@ -351,26 +351,33 @@ def findings(
 async def _domain_finding_records(client, dom, sem) -> tuple:
     """Fetch one domain's attack-path findings, one bounded call per finding type.
 
-    Returns ``(domain_record, [finding_record, ...])`` shaped for
-    :func:`bhe.triage.summarize`.  The ``?finding=`` filter is what the real API
-    expects; the mock ignores it and returns every type, so we also filter
-    client-side by the requested type - correct against both.
+    Returns ``(domain_record, [finding_record, ...], n_failed)`` - the records are
+    shaped for :func:`bhe.triage.summarize`.  Every query is isolated: a domain or
+    finding type that errors (Azure/Entra domains don't expose AD findings, some
+    500 or return non-JSON) is skipped and counted, never aborting the whole
+    triage.  The ``?finding=`` filter is what the real API expects; the mock
+    ignores it and returns every type, so we also filter client-side - correct
+    against both.
     """
     import asyncio
 
-    from bhe.api.client import BHEClientError
-
     did = dom.get("id")
     if not did:
-        return dom, []
-    types = await client.get_domain_available_types(did)
+        return dom, [], 0
+    try:
+        types = await client.get_domain_available_types(did)
+    except Exception:  # noqa: BLE001 - one bad domain shouldn't sink the estate view
+        return dom, [], 1
     tids = [t for t in (_finding_type_id(x) for x in (types or [])) if t]
+    failures = 0
 
     async def _one(tid: str) -> list:
+        nonlocal failures
         async with sem:
             try:
                 resp = await client.get_domain_attack_path_findings(did, params={"finding": tid})
-            except BHEClientError:
+            except Exception:  # noqa: BLE001 - skip and count this finding type
+                failures += 1
                 return []
         data = resp.get("data", resp) if isinstance(resp, dict) else resp
         out = []
@@ -386,12 +393,16 @@ async def _domain_finding_records(client, dom, sem) -> tuple:
         return out
 
     chunks = await asyncio.gather(*(_one(t) for t in tids))
-    return dom, [rec for chunk in chunks for rec in chunk]
+    return dom, [rec for chunk in chunks for rec in chunk], failures
 
 
 @app.command()
 def triage(
     ctx: typer.Context,
+    domain: str = typer.Option(
+        None, "--domain", "-d",
+        help="Scope to one domain (name or id); omit for the whole estate.",
+    ),
     top: int = typer.Option(20, "--top", "-n", help="Show the top N rows."),
     by_type: bool = typer.Option(
         False, "--by-type", help="Roll up across domains: one row per finding type."
@@ -400,23 +411,35 @@ def triage(
         False, "--include-accepted", help="Also score accepted-risk findings."
     ),
 ) -> None:
-    """Rank attack-path findings across ALL domains -> where to start.
+    """Rank attack-path findings across the estate (or one domain) -> where to start.
 
     Unlike the website's per-domain Attack Paths view, this ranks every finding
-    type across the whole estate in one list, scored transparently as
-    severity-weight x affected principals x (1 + exposure). Accepted-risk findings
-    are excluded by default. Use ``--by-type`` for an estate-wide roll-up.
+    type across all domains in one list, scored transparently as severity-weight x
+    affected principals x (1 + exposure). Accepted-risk findings are excluded by
+    default. ``--domain`` scopes to one domain; ``--by-type`` rolls up estate-wide.
     """
     import asyncio
 
     from bhe.triage import rollup_by_type, severity_totals, summarize
 
     async def _go(c):
-        domains = await c.get_available_domains()
+        domains = [await resolve_domain(c, domain)] if domain else await c.get_available_domains()
         sem = asyncio.Semaphore(8)  # bound fan-out so we don't trip the rate limiter
-        return await asyncio.gather(*(_domain_finding_records(c, d, sem) for d in domains))
+        results = await asyncio.gather(
+            *(_domain_finding_records(c, d, sem) for d in domains),
+            return_exceptions=True,
+        )
+        per_domain, failures = [], 0
+        for res in results:
+            if isinstance(res, Exception):
+                failures += 1
+                continue
+            dom, recs, errs = res
+            per_domain.append((dom, recs))
+            failures += errs
+        return per_domain, failures
 
-    per_domain = run(ctx, _go)
+    per_domain, failures = run(ctx, _go)
     rows = summarize(per_domain, include_accepted=include_accepted)
 
     if by_type:
@@ -426,16 +449,26 @@ def triage(
         out = [r.as_dict() for r in rows[:top]]
         columns = ["finding", "domain", "severity", "principals", "accepted", "max_exposure", "score"]
 
+    def _skipped_note() -> None:
+        if failures:
+            console.print(
+                f"[dim]{failures} finding query(ies) failed and were skipped "
+                "(often Azure/Entra or uncollected domains).[/dim]"
+            )
+
     if settings(ctx).as_json:
         print_json(out)
         return
     if not out:
-        console.print("[green]No unremediated attack-path findings across the estate.[/green]")
+        console.print("[green]No unremediated attack-path findings in scope.[/green]")
+        _skipped_note()
         return
     totals = severity_totals(rows)
     summary = ", ".join(f"{k}: {v}" for k, v in sorted(totals.items()))
     console.print(f"[dim]Active principals by severity -> {summary}[/dim]")
-    output(ctx, out, columns=columns, title="Triage - findings across the estate (fix these first)")
+    where = f"in {domain}" if domain else "across the estate"
+    output(ctx, out, columns=columns, title=f"Triage - findings {where} (fix these first)")
+    _skipped_note()
 
 
 # ----------------------------------------------------------------------------

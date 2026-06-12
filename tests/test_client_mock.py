@@ -72,6 +72,7 @@ async def test_query_bearing_get_signs_over_full_request_uri(monkeypatch) -> Non
 
         async def _fake_send(request: httpx.Request, **kwargs) -> httpx.Response:
             seen["wire_uri"] = request.url.raw_path.decode("ascii")
+            seen["accept"] = request.headers.get("accept", "")
             return httpx.Response(200, json={"data": []}, request=request)
 
         monkeypatch.setattr(client._auth, "sign_request", _spy)
@@ -79,9 +80,31 @@ async def test_query_bearing_get_signs_over_full_request_uri(monkeypatch) -> Non
 
         await client.search("authenticated users@essos.local", kind="User")
 
+    # We ask for JSON explicitly (some endpoints default to CSV).
+    assert seen["accept"] == "application/json"
+
     # We signed the path *plus* the encoded query, and it matches the wire URI
     # the server will validate against, byte for byte.
     assert seen["signed_uri"].startswith("/api/v2/search?")
     assert "type=User" in seen["signed_uri"]
     assert "q=authenticated" in seen["signed_uri"]
     assert seen["signed_uri"] == seen["wire_uri"]
+
+
+async def test_non_json_2xx_body_raises_api_error_not_jsondecode(monkeypatch) -> None:
+    """A 2xx with a non-JSON body must surface as BHEClientError, not crash.
+
+    Some endpoints/domains return a CSV or HTML body; a raw JSONDecodeError would
+    escape and tear down an in-flight asyncio.gather (and its shared client).
+    """
+    import httpx
+
+    from bhe.api.client import BHEClientError
+
+    async with BHEClient.connect("https://tenant.example", "tid", "secret") as client:
+        async def _fake_send(request: httpx.Request, **kwargs) -> httpx.Response:
+            return httpx.Response(200, content=b"Principal,Finding\nALICE,DCSync\n", request=request)
+
+        monkeypatch.setattr(client._http, "send", _fake_send)
+        with pytest.raises(BHEClientError):
+            await client.get_self()

@@ -174,6 +174,16 @@ def test_triage_by_type_rolls_up_domains() -> None:
     assert rolled[0]["finding"] == "DCSync"
 
 
+def test_triage_scoped_to_one_domain() -> None:
+    result = _invoke("--mock", "--json", "triage", "-d", "CORP.LOCAL")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows  # CORP.LOCAL has findings
+    # Scoped: every row is CORP.LOCAL, and DCSync still ranks first.
+    assert {r["domain"] for r in rows} == {"CORP.LOCAL"}
+    assert rows[0]["finding"] == "DCSync"
+
+
 def test_posture_latest_per_domain() -> None:
     result = _invoke("--mock", "--json", "posture")
     assert result.exit_code == 0
