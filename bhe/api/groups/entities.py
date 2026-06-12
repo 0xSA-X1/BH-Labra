@@ -39,12 +39,24 @@ class EntitiesMixin(GroupMixin):
         Raises:
             ReadOnlyViolation: If the query is not read-only.
         """
+        from bhe.api.client import BHEClientError
+
         assert_cypher_readonly(query)
         payload: dict[str, Any] = {
             "query": query,
             "include_properties": include_properties,
         }
-        return await self._request("POST", "/api/v2/graphs/cypher", json_data=payload)
+        try:
+            return await self._request("POST", "/api/v2/graphs/cypher", json_data=payload)
+        except BHEClientError as exc:
+            if exc.status_code == 404:
+                # BHE answers 404 when a Cypher query yields no graph (a
+                # shortestPath with no path, or a MATCH that hits nothing).
+                # That's an empty result, not an error - return an empty graph so
+                # `hunt`, `cypher`, and the backward-scope engine all degrade
+                # gracefully instead of surfacing a scary "resource not found".
+                return {"data": {"nodes": {}, "edges": []}}
+            raise
 
     # ------------------------------------------------------------------
     # Search

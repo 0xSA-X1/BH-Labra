@@ -108,3 +108,19 @@ async def test_non_json_2xx_body_raises_api_error_not_jsondecode(monkeypatch) ->
         monkeypatch.setattr(client._http, "send", _fake_send)
         with pytest.raises(BHEClientError):
             await client.get_self()
+
+
+async def test_cypher_404_empty_result_is_not_an_error(monkeypatch) -> None:
+    """BHE returns 404 when a Cypher query yields no graph; treat it as empty."""
+    import httpx
+
+    async with BHEClient.connect("https://tenant.example", "tid", "secret") as client:
+        async def _fake_send(request: httpx.Request, **kwargs) -> httpx.Response:
+            return httpx.Response(
+                404, json={"errors": [{"message": "resource not found"}]}, request=request
+            )
+
+        monkeypatch.setattr(client._http, "send", _fake_send)
+        result = await client.cypher_query("MATCH p=shortestPath((s)-[*1..]->(t)) RETURN p")
+
+    assert result == {"data": {"nodes": {}, "edges": []}}

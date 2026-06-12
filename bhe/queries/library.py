@@ -16,42 +16,46 @@ def escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def shortest_path(source_name: str, target_name: str) -> str:
-    """Shortest path between two named principals."""
+def shortest_path(source_id: str, target_id: str) -> str:
+    """Shortest path between two principals, matched by objectid.
+
+    ``bhe hunt`` resolves friendly names to objectids first (handling partial
+    names, raw ids and disambiguation), so the builders match the exact node by
+    its indexed ``objectid`` rather than a possibly-ambiguous name.
+    """
     return (
-        f"MATCH p=shortestPath("
-        f"(s {{name: '{escape(source_name)}'}})-[*1..]->(t {{name: '{escape(target_name)}'}})"
-        f") RETURN p"
+        "MATCH p=shortestPath((s)-[*1..]->(t)) "
+        f"WHERE s.objectid = '{escape(source_id)}' AND t.objectid = '{escape(target_id)}' "
+        "RETURN p"
     )
 
 
-def all_shortest_paths(source_name: str, target_name: str) -> str:
-    """All equally-short paths between two named principals."""
+def all_shortest_paths(source_id: str, target_id: str) -> str:
+    """All equally-short paths between two principals, matched by objectid."""
     return (
-        f"MATCH p=allShortestPaths("
-        f"(s {{name: '{escape(source_name)}'}})-[*1..]->(t {{name: '{escape(target_name)}'}})"
-        f") RETURN p"
+        "MATCH p=allShortestPaths((s)-[*1..]->(t)) "
+        f"WHERE s.objectid = '{escape(source_id)}' AND t.objectid = '{escape(target_id)}' "
+        "RETURN p"
     )
 
 
-def path_to_tier_zero(source_name: str, all_paths: bool = False) -> str:
-    """Shortest path from a named principal to *any* Tier Zero / high-value node.
+def path_to_tier_zero(source_id: str, all_paths: bool = False) -> str:
+    """Shortest path from a principal (by objectid) to *any* Tier Zero node.
 
     The target set is identified by BHE's analysis tags rather than a fixed node,
     so it adapts to whatever the tenant marks as Tier Zero.
     """
     finder = "allShortestPaths" if all_paths else "shortestPath"
     return (
-        f"MATCH p={finder}(("
-        f"s {{name: '{escape(source_name)}'}})-[*1..]->(t)) "
-        f"WHERE coalesce(t.system_tags,'') CONTAINS 'admin_tier_0' "
-        f"OR t.isTierZero = true "
-        f"RETURN p"
+        f"MATCH p={finder}((s)-[*1..]->(t)) "
+        f"WHERE s.objectid = '{escape(source_id)}' "
+        "AND (coalesce(t.system_tags,'') CONTAINS 'admin_tier_0' OR t.isTierZero = true) "
+        "RETURN p"
     )
 
 
-def hybrid_path_to_azure(source_name: str, all_paths: bool = False) -> str:
-    """Shortest path from a named (on-prem AD) principal to *any* Azure/Entra node.
+def hybrid_path_to_azure(source_id: str, all_paths: bool = False) -> str:
+    """Shortest path from an on-prem AD principal (by objectid) to *any* Azure node.
 
     Azure nodes carry ``AZ``-prefixed labels in BloodHound (AZUser, AZGroup,
     AZServicePrincipal, ...), so matching on the label prefix finds a hybrid path
@@ -59,10 +63,10 @@ def hybrid_path_to_azure(source_name: str, all_paths: bool = False) -> str:
     """
     finder = "allShortestPaths" if all_paths else "shortestPath"
     return (
-        f"MATCH p={finder}(("
-        f"s {{name: '{escape(source_name)}'}})-[*1..]->(t)) "
-        f"WHERE any(lbl IN labels(t) WHERE lbl STARTS WITH 'AZ') "
-        f"RETURN p"
+        f"MATCH p={finder}((s)-[*1..]->(t)) "
+        f"WHERE s.objectid = '{escape(source_id)}' "
+        "AND any(lbl IN labels(t) WHERE lbl STARTS WITH 'AZ') "
+        "RETURN p"
     )
 
 

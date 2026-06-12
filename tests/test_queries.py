@@ -34,6 +34,15 @@ def test_builders_are_all_readonly_safe() -> None:
         assert_cypher_readonly(q)
 
 
+def test_path_builders_match_by_objectid() -> None:
+    # hunt resolves names to objectids first, so the builders match by objectid.
+    q = library.path_to_tier_zero("S-1-5-21-1-2-3-1119")
+    assert "s.objectid = 'S-1-5-21-1-2-3-1119'" in q
+    q2 = library.shortest_path("S-1-oid-a", "S-1-oid-b")
+    assert "s.objectid = 'S-1-oid-a'" in q2
+    assert "t.objectid = 'S-1-oid-b'" in q2
+
+
 def test_escape_neutralises_quote_injection() -> None:
     # A name containing a quote must be escaped, not break out of the literal.
     q = library.shortest_path("a' RETURN n; //", "b")

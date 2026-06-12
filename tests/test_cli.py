@@ -150,6 +150,20 @@ def test_hunt_tier_zero_dry_run_emits_cypher() -> None:
     assert "admin_tier_0" in result.stdout
 
 
+def test_hunt_resolves_name_to_objectid() -> None:
+    # The name is resolved to its objectid for the query; the comment shows who.
+    result = _invoke("--mock", "hunt", "tier-zero", "ALICE@CORP.LOCAL", "--dry-run")
+    assert result.exit_code == 0
+    assert "s.objectid = 'S-1-5-21-1111111111-2222222222-3333333333-1105'" in result.stdout
+    assert "ALICE@CORP.LOCAL" in result.stdout  # the // resolution comment
+
+
+def test_hunt_ambiguous_principal_exits_2() -> None:
+    # "ALICE" matches ALICE@ and ALICE-ADMIN@ -> disambiguation, not a guess.
+    result = _invoke("--mock", "hunt", "tier-zero", "ALICE")
+    assert result.exit_code == 2
+
+
 def test_triage_ranks_findings_across_domains() -> None:
     result = _invoke("--mock", "--json", "triage")
     assert result.exit_code == 0
