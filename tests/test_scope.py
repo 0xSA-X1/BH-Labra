@@ -6,7 +6,10 @@ from bhe.api.readonly import assert_cypher_readonly
 from bhe.scope import (
     Edge,
     Expansion,
+    Node,
+    Snapshot,
     backward_reach,
+    choke_targets,
     domain_of,
     edges_from_response,
     inbound_query,
@@ -16,6 +19,26 @@ from bhe.scope import (
     seeds_in_domain,
     tier_zero_seed_query,
 )
+
+
+def test_choke_targets_finds_nearest_tier_zero_seed() -> None:
+    # ALICE -> HELP -> DA(seed); both ALICE and HELP funnel into DOMAIN ADMINS.
+    snap = Snapshot(
+        seeds={"DA"},
+        nodes={
+            "DA": Node("DA", "DOMAIN ADMINS@CORP", "Group", 0),
+            "HELP": Node("HELP", "HELPDESK@CORP", "Group", 1),
+            "ALICE": Node("ALICE", "ALICE@CORP", "User", 2),
+        },
+        edges=[
+            Edge("HELP", "HELPDESK@CORP", "Group", "GenericAll", "DA"),
+            Edge("ALICE", "ALICE@CORP", "User", "MemberOf", "HELP"),
+        ],
+        rounds=2,
+    )
+    targets = choke_targets(snap, ["HELP", "ALICE"])
+    assert targets["HELP"] == ("DOMAIN ADMINS@CORP", 1)
+    assert targets["ALICE"] == ("DOMAIN ADMINS@CORP", 1)  # reaches DA via HELP
 
 
 def test_domain_of_prefers_property_then_derives_from_name() -> None:

@@ -22,7 +22,7 @@ Scale notes (why this survives a multi-million-object tenant):
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
@@ -310,6 +310,41 @@ def rank_choke_points(snapshot: Snapshot, *, max_points: int = 25) -> tuple[list
             ChokePoint(oid, node.name, node.kind, node.depth, cut, cut / baseline)
         )
     return picks, baseline
+
+
+def choke_targets(snapshot: Snapshot, choke_ids) -> dict[str, tuple[str, int]]:
+    """For each choke objectid, the nearest Tier Zero seed it funnels into.
+
+    Snapshot edges point ``source -> target`` toward Tier Zero, so a forward BFS
+    from a choke point reaches the seed(s) downstream of it.  Returns
+    ``{objectid: (nearest_seed_name, distinct_seeds_reached)}`` - the nearest seed
+    (fewest hops) plus how many distinct Tier Zero nodes it can ultimately reach.
+    """
+    fwd: dict[str, list[str]] = defaultdict(list)
+    for e in snapshot.edges:
+        fwd[e.source].append(e.target)
+    seeds = snapshot.seeds
+
+    out: dict[str, tuple[str, int]] = {}
+    for oid in choke_ids:
+        seen = {oid}
+        queue = deque([oid])
+        nearest: str | None = None
+        reached = 0
+        while queue:
+            cur = queue.popleft()
+            for nxt in fwd.get(cur, []):
+                if nxt in seen:
+                    continue
+                seen.add(nxt)
+                if nxt in seeds:
+                    reached += 1
+                    if nearest is None:
+                        nearest = nxt
+                queue.append(nxt)
+        node = snapshot.nodes.get(nearest) if nearest else None
+        out[oid] = ((node.name if node else nearest) or "?", reached)
+    return out
 
 
 # ----------------------------------------------------------------------------

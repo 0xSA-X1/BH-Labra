@@ -25,10 +25,12 @@ from typing import Any, Iterable
 
 # Severity → weight.  Spread so a single critical outranks a pile of lows, but a
 # large population of highs can still surface above one low-impact critical.
+# BHE labels the mid tier "moderate" (not "medium"); both map to the same weight.
 SEVERITY_WEIGHT: dict[str, int] = {
     "critical": 100,
     "high": 10,
     "medium": 3,
+    "moderate": 3,
     "low": 1,
 }
 

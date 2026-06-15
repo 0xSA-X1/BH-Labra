@@ -40,6 +40,9 @@ def test_severity_rank_orders() -> None:
     assert severity_rank("critical") > severity_rank("high")
     assert severity_rank("high") > severity_rank("medium") > severity_rank("low")
     assert severity_rank("bogus") == 0
+    # BHE uses "moderate" for the mid tier; it must weigh the same as "medium".
+    assert severity_rank("moderate") == severity_rank("medium") == 3
+    assert severity_rank("Moderate") == 3  # case-insensitive
 
 
 def test_rank_puts_critical_first() -> None:

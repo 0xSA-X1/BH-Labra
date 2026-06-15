@@ -27,6 +27,7 @@ from bhe.cli.hunt import hunt_app
 from bhe.config import KeyringUnavailable
 from bhe.scope import (
     backward_reach,
+    choke_targets,
     domain_of,
     make_expander,
     rank_choke_points,
@@ -1015,6 +1016,7 @@ def choke(
     _note_cache(ctx, cache_age)
 
     chokes, baseline = rank_choke_points(snapshot, max_points=top)
+    targets = choke_targets(snapshot, [cp.objectid for cp in chokes])
     if settings(ctx).as_json:
         print_json(
             {
@@ -1031,6 +1033,8 @@ def choke(
                         "depth": cp.depth,
                         "principals_cut": cp.principals_cut,
                         "pct_cut": round(cp.pct_cut, 3),
+                        "reaches_t0": targets.get(cp.objectid, ("?", 0))[0],
+                        "tier_zero_targets": targets.get(cp.objectid, ("?", 0))[1],
                     }
                     for cp in chokes
                 ],
@@ -1047,6 +1051,10 @@ def choke(
     if not chokes:
         console.print("[dim]No single-node choke points (paths are already disjoint).[/dim]")
         return
+    def _reaches(oid: str) -> str:
+        name, n = targets.get(oid, ("?", 0))
+        return f"{name} (+{n - 1})" if n > 1 else name
+
     rows = [
         {
             "rank": i + 1,
@@ -1055,13 +1063,14 @@ def choke(
             "depth": cp.depth,
             "principals_cut": cp.principals_cut,
             "pct": f"{cp.pct_cut * 100:.0f}%",
+            "reaches_t0": _reaches(cp.objectid),
         }
         for i, cp in enumerate(chokes)
     ]
     output(
         ctx,
         rows,
-        columns=["rank", "choke_point", "kind", "depth", "principals_cut", "pct"],
+        columns=["rank", "choke_point", "kind", "depth", "principals_cut", "pct", "reaches_t0"],
         title="Choke points - fix these first",
     )
 

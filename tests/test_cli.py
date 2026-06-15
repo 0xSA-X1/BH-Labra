@@ -285,6 +285,9 @@ def test_choke_tier_zero_ranks_helpdesk() -> None:
     top = payload["choke_points"][0]
     assert "HELPDESK" in top["name"]
     assert top["principals_cut"] == 3
+    # The Tier Zero object this choke point funnels into.
+    assert "DOMAIN ADMINS" in top["reaches_t0"]
+    assert top["tier_zero_targets"] == 1
 
 
 def test_choke_requires_a_seed() -> None:
