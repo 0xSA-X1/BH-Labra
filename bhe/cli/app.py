@@ -244,6 +244,13 @@ def _posture_rows(response) -> list:
     return response or []
 
 
+def _as_percent(value) -> str:
+    """Render a 0-1 exposure index as a whole percentage, matching the BHE web GUI."""
+    if not isinstance(value, (int, float)):
+        return ""
+    return f"{value * 100:.0f}%"
+
+
 def _latest_posture_per_domain(rows: list) -> list:
     """Keep only the most recent snapshot per domain (posture-stats is historical)."""
     best: dict = {}
@@ -257,11 +264,88 @@ def _latest_posture_per_domain(rows: list) -> list:
     return [v[1] for v in best.values()]
 
 
+def _posture_explain(ctx: typer.Context, domain: str) -> None:
+    """Break down what drives one domain's exposure: its attack-path findings.
+
+    BHE computes the exposure index server-side, so this doesn't recompute the
+    number - it shows the findings that feed it (severity, affected principals,
+    and BHE's per-finding impact), ranked by contribution.
+    """
+    import asyncio
+
+    from bhe.triage import severity_rank
+
+    async def _go(c):
+        dom = await resolve_domain(c, domain)
+        latest = _latest_posture_per_domain(_posture_rows(await c.get_posture_stats()))
+        headline = next((r for r in latest if r.get("domain_sid") == dom.get("id")), None)
+        stats, failures = await _domain_finding_stats(c, dom, asyncio.Semaphore(8))
+        return dom, headline, stats, failures
+
+    dom, headline, stats, failures = run(ctx, _go)
+    name = dom.get("name") or domain
+    # Rank by the real ExposurePercentage (the GUI's value), then severity / breadth.
+    ordered = sorted(
+        stats,
+        key=lambda s: (s.exposure, severity_rank(s.severity), s.principals),
+        reverse=True,
+    )
+    breakdown = [
+        {
+            "finding": s.finding,
+            "severity": s.severity,
+            "principals": s.principals,
+            "exposure": _as_percent(s.exposure),
+            "impact": _as_percent(s.impact),
+        }
+        for s in ordered
+    ]
+
+    if settings(ctx).as_json:
+        print_json(
+            {
+                "domain": name,
+                "exposure": _as_percent(headline.get("exposure_index")) if headline else None,
+                "tier_zero": headline.get("tier_zero_count") if headline else None,
+                "critical": headline.get("critical_risk_count") if headline else None,
+                "findings": breakdown,
+            }
+        )
+        return
+
+    if headline:
+        console.print(
+            f"[bold]{name}[/bold]  exposure [bold]{_as_percent(headline.get('exposure_index'))}[/bold]  "
+            f"({headline.get('tier_zero_count', 0)} Tier Zero, "
+            f"{headline.get('critical_risk_count', 0)} critical)"
+        )
+    console.print(
+        "[dim]exposure = BHE's ExposurePercentage (the % of principals a finding exposes, "
+        "as shown in the web GUI; populated when butterfly analysis is on - list-type "
+        "findings like Kerberoasting won't carry it). impact = ImpactPercentage. Both are "
+        "a representative affected principal's value.[/dim]"
+    )
+    if breakdown:
+        output(
+            ctx, breakdown,
+            columns=["finding", "severity", "principals", "exposure", "impact"],
+            title=f"Exposure breakdown - {name}",
+        )
+    else:
+        console.print("[green]No attack-path findings drive this domain's exposure.[/green]")
+    if failures:
+        console.print(f"[dim]{failures} finding query(ies) failed and were skipped.[/dim]")
+
+
 @app.command()
 def posture(
     ctx: typer.Context,
     domain: str = typer.Argument(
         None, help="Optional domain name/id to scope to (e.g. ESSOS.LOCAL)."
+    ),
+    explain: bool = typer.Option(
+        False, "--explain", "-e",
+        help="Break down what drives one domain's exposure (requires a domain).",
     ),
     history: bool = typer.Option(
         False, "--history", help="Show every snapshot, not just the latest per domain."
@@ -269,8 +353,17 @@ def posture(
 ) -> None:
     """Risk-posture stats per domain (latest snapshot, ranked by exposure).
 
-    Pass a domain to scope to just that one (work one domain at a time).
+    Pass a domain to scope to just that one; add ``--explain`` to see the findings
+    that drive that domain's exposure percentage.
     """
+    if explain:
+        if not domain:
+            err_console.print(
+                "[red]Give a domain to explain, e.g. `bhe posture ESSOS.LOCAL --explain`.[/red]"
+            )
+            raise typer.Exit(code=2)
+        _posture_explain(ctx, domain)
+        return
 
     async def _go(c):
         dom = await resolve_domain(c, domain) if domain else None
@@ -297,6 +390,9 @@ def posture(
         key=lambda x: x["exposure"] if isinstance(x["exposure"], (int, float)) else -1,
         reverse=True,
     )
+    # Render exposure as a percentage (the index is 0-1; the web GUI shows /100).
+    for row in out:
+        row["exposure"] = _as_percent(row["exposure"])
     scope = f" - {dom.get('name')}" if dom is not None else ""
     output(
         ctx,
@@ -398,6 +494,7 @@ async def _domain_finding_stats(client, dom, sem) -> tuple:
             severity=str(sample.get("Severity") or "").lower(),
             principals=principals,
             impact=float(sample.get("ImpactPercentage") or 0.0),
+            exposure=float(sample.get("ExposurePercentage") or 0.0),
         )
 
     results = await asyncio.gather(*(_one(t) for t in tids))

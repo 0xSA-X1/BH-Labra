@@ -51,6 +51,7 @@ class FindingStat:
     severity: str
     principals: int       # affected-principal total (the /details envelope `count`)
     impact: float         # representative ImpactPercentage (0..1)
+    exposure: float = 0.0  # representative ExposurePercentage (0..1; needs butterfly analysis)
 
     @property
     def score(self) -> float:
@@ -62,6 +63,7 @@ class FindingStat:
             "domain": self.domain,
             "severity": self.severity,
             "principals": self.principals,
+            "exposure": round(self.exposure, 3),
             "impact": round(self.impact, 3),
             "score": round(self.score, 1),
         }

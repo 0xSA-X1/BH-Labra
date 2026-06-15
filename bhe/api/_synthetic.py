@@ -108,10 +108,12 @@ def synthetic_cypher_response(query: str) -> dict[str, Any] | None:
 # finding type, so ``bhe --mock triage`` / ``findings`` exercise real per-type
 # ranking against the BHE-shaped ``{count, data:[{Severity, ImpactPercentage}]}``
 # envelope (the same estate is served for every domain).
+# ``exposure`` (ExposurePercentage) is non-zero only for relationship-type findings
+# with butterfly analysis on; list-type findings (Kerberoasting/ASREPRoasting) lack it.
 DETAILS: dict[str, dict[str, Any]] = {
-    "DCSync": {"severity": "critical", "count": 2, "impact": 0.91},
-    "Kerberoasting": {"severity": "high", "count": 3, "impact": 0.34},
-    "ASREPRoasting": {"severity": "medium", "count": 1, "impact": 0.12},
+    "DCSync": {"severity": "critical", "count": 2, "impact": 0.91, "exposure": 0.88},
+    "Kerberoasting": {"severity": "high", "count": 3, "impact": 0.34, "exposure": 0.0},
+    "ASREPRoasting": {"severity": "medium", "count": 1, "impact": 0.12, "exposure": 0.0},
 }
 
 
@@ -134,6 +136,8 @@ def details_payload(finding: str | None) -> dict[str, Any]:
                 "Finding": finding,
                 "Severity": spec["severity"],
                 "ImpactPercentage": spec["impact"],
+                "ExposurePercentage": spec["exposure"],
+                "ExposureCount": int(spec["exposure"] * 100),
                 "Accepted": False,
                 "PrincipalName": f"SAMPLE-{finding}@CORP.LOCAL",
                 "Props": {"name": f"SAMPLE-{finding}@CORP.LOCAL"},

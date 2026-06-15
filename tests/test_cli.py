@@ -252,6 +252,29 @@ def test_posture_latest_per_domain() -> None:
     assert result.exit_code == 0
     rows = json.loads(result.stdout)
     assert rows and "exposure" in rows[0]
+    # Exposure is rendered as a percentage (web-GUI style), not the raw 0-1 index.
+    assert rows[0]["exposure"] == "42%"  # CORP.LOCAL (0.42), the most exposed
+    assert all(r["exposure"].endswith("%") for r in rows)
+
+
+def test_posture_explain_breaks_down_findings() -> None:
+    result = _invoke("--mock", "--json", "posture", "CORP.LOCAL", "--explain")
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["domain"] == "CORP.LOCAL"
+    assert payload["exposure"] == "42%"          # the headline number being explained
+    assert payload["tier_zero"] == 18
+    # The findings that drive it, ranked by the real ExposurePercentage.
+    findings = payload["findings"]
+    assert findings[0]["finding"] == "DCSync"
+    assert findings[0]["exposure"] == "88%"  # BHE's ExposurePercentage, web-GUI value
+    assert findings[0]["impact"].endswith("%")
+    assert {f["finding"] for f in findings} == {"DCSync", "Kerberoasting", "ASREPRoasting"}
+
+
+def test_posture_explain_requires_a_domain() -> None:
+    result = _invoke("--mock", "posture", "--explain")  # no domain
+    assert result.exit_code == 2
 
 
 def test_choke_tier_zero_ranks_helpdesk() -> None:

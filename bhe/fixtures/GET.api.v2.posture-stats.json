@@ -2,7 +2,7 @@
   "data": [
     {
       "domain_sid": "S-1-5-21-1111111111-2222222222-3333333333",
-      "exposure_index": 42.5,
+      "exposure_index": 0.42,
       "tier_zero_count": 18,
       "critical_risk_count": 3,
       "finding": "Tier Zero exposure",
@@ -10,7 +10,7 @@
     },
     {
       "domain_sid": "S-1-5-21-4444444444-5555555555-6666666666",
-      "exposure_index": 12.0,
+      "exposure_index": 0.12,
       "tier_zero_count": 9,
       "critical_risk_count": 0,
       "finding": "Tier Zero exposure",
