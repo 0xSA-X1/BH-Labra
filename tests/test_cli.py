@@ -153,6 +153,38 @@ def test_audit_last_per_user() -> None:
     assert grayson["action"] == "LoginAttempt"  # 06-12 login beats the 06-11 token
 
 
+def test_jobs_current_and_finished_filter() -> None:
+    # /jobs/current and /jobs/finished don't exist; filter client-side by end_time.
+    cur = _invoke("--mock", "--json", "jobs", "--current")
+    assert cur.exit_code == 0
+    cur_rows = json.loads(cur.stdout)
+    assert all(not r.get("end") or r["end"] == "-" for r in cur_rows)
+    assert any(r["status"] == "RUNNING" for r in cur_rows)
+
+    fin = _invoke("--mock", "--json", "jobs", "--finished")
+    assert fin.exit_code == 0
+    fin_rows = json.loads(fin.stdout)
+    assert all(r["id"] == 101 for r in fin_rows)  # only the COMPLETE job has an end
+
+
+def test_client_partial_id_resolves() -> None:
+    result = _invoke("--mock", "client", "0002")  # last-segment fragment
+    assert result.exit_code == 0
+    assert "Azure-Collector" in result.stdout
+
+
+def test_client_ambiguous_fragment_exits_2() -> None:
+    result = _invoke("--mock", "client", "000")  # matches both client ids
+    assert result.exit_code == 2
+
+
+def test_search_substring_matches() -> None:
+    result = _invoke("--mock", "--json", "search", "ali")
+    assert result.exit_code == 0
+    names = {r["name"] for r in json.loads(result.stdout)}
+    assert names == {"ALICE@CORP.LOCAL", "ALICE-ADMIN@CORP.LOCAL"}
+
+
 def test_jobs_correlated_to_client() -> None:
     result = _invoke("--mock", "--json", "jobs")
     assert result.exit_code == 0
@@ -177,7 +209,8 @@ def test_entity_ambiguous_exits_2() -> None:
 def test_entity_show_sessions() -> None:
     result = _invoke("--mock", "entity", "ALICE@CORP.LOCAL", "--show", "sessions")
     assert result.exit_code == 0
-    assert "DC01.CORP.LOCAL" in result.stdout  # the session host
+    assert "DC01.CORP.LOCAL" in result.stdout  # the related node
+    assert "HasSession" in result.stdout       # the edge / right is shown
 
 
 def test_entity_show_rejects_unknown_aspect() -> None:

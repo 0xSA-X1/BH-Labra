@@ -10,8 +10,20 @@
           "domain": "CORP.LOCAL",
           "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1001"
         }
+      },
+      "2": {
+        "objectId": "S-1-5-21-1111111111-2222222222-3333333333-1105",
+        "label": "ALICE@CORP.LOCAL",
+        "kind": "User",
+        "properties": {
+          "name": "ALICE@CORP.LOCAL",
+          "domain": "CORP.LOCAL",
+          "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1105"
+        }
       }
     },
-    "edges": []
+    "edges": [
+      {"source": "1", "target": "2", "kind": "HasSession", "label": "HasSession"}
+    ]
   }
 }

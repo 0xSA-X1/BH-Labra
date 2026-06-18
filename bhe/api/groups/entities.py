@@ -74,9 +74,48 @@ class EntitiesMixin(GroupMixin):
         params: dict[str, Any] = {"q": term}
         if kind:
             params["type"] = kind
-        return self._data(
+        hits = self._data(
             await self._request("GET", "/api/v2/search", params=params)
         ) or []
+        if hits:
+            return hits
+        # BHE's /search can miss partial names (e.g. "spy" won't find "SPYS@..").
+        # Fall back to a case-insensitive substring match on the node name.
+        return await self._search_by_name_contains(term, kind)
+
+    async def _search_by_name_contains(
+        self, term: str, kind: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Substring search on node name via Cypher (the forgiving fallback)."""
+        from bhe.parsing.graph import parse_graph
+
+        safe = term.replace("\\", "\\\\").replace("'", "\\'")
+        try:
+            resp = await self.cypher_query(
+                "MATCH (n) WHERE n.name IS NOT NULL "
+                f"AND toUpper(n.name) CONTAINS toUpper('{safe}') RETURN n LIMIT 50"
+            )
+        except Exception:  # noqa: BLE001 - the fallback is best-effort
+            return []
+        nodes, _ = parse_graph(resp)
+        out: list[dict[str, Any]] = []
+        for node in nodes:
+            props = node.properties or {}
+            oid = node.object_id or props.get("objectid")
+            node_kind = node.kind or node.label or ""
+            if not oid:
+                continue
+            if kind and str(node_kind).lower() != kind.lower():
+                continue
+            out.append(
+                {
+                    "objectid": oid,
+                    "name": props.get("name") or node.label or oid,
+                    "type": node_kind,
+                    "distinguishedname": props.get("distinguishedname", ""),
+                }
+            )
+        return out
 
     # ------------------------------------------------------------------
     # Entity detail

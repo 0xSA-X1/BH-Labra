@@ -87,6 +87,18 @@ class MockTransport:
             if synthetic is not None:
                 return httpx.Response(200, json=synthetic)
 
+        # Search filters the fixture by the q/type params (BHE matches by name),
+        # so substring search behaves realistically in mock.
+        if method.upper() == "GET" and path == "/api/v2/search":
+            fixture = self._match("GET", "/api/v2/search")
+            rows = json.loads(fixture.read_text(encoding="utf-8")).get("data", []) if fixture else []
+            q = str((params or {}).get("q", "")).lower()
+            typ = (params or {}).get("type")
+            rows = [r for r in rows if q in str(r.get("name", "")).lower()]
+            if typ:
+                rows = [r for r in rows if str(r.get("type", "")).lower() == str(typ).lower()]
+            return httpx.Response(200, json={"data": rows})
+
         # Per-domain findings are served synthetically (keyed by the `finding`
         # param) so triage/findings exercise real per-type ranking.
         if method.upper() == "GET" and "/domains/" in path:

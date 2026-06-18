@@ -74,6 +74,41 @@ async def resolve_domain(client: BHEClient, selector: str) -> dict[str, Any]:
     )
 
 
+async def resolve_client(client: BHEClient, selector: str) -> dict[str, Any]:
+    """Resolve a collection client by full id, a partial/last-segment id, or name.
+
+    Client ids are long GUIDs that are awkward to copy whole from a terminal, so a
+    fragment (e.g. the last segment ``41bf0d42c999``) or the client name resolves
+    too - uniquely, or it raises with the candidates.
+    """
+    clients = await client.get_clients()
+    low = selector.strip().lower()
+
+    for cl in clients:
+        if str(cl.get("id", "")).lower() == low:
+            return cl
+
+    matches = [
+        cl for cl in clients
+        if low in str(cl.get("id", "")).lower() or low in str(cl.get("name", "")).lower()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ResolutionError(
+            f"No client matches '{selector}'.",
+            candidates=clients,
+            columns=["name", "id", "hostname", "type"],
+            hint="Run `bhe clients` to list them.",
+        )
+    raise ResolutionError(
+        f"'{selector}' is ambiguous - {len(matches)} clients match.",
+        candidates=matches,
+        columns=["name", "id", "hostname", "type"],
+        hint="Use a longer id fragment.",
+    )
+
+
 async def resolve_principal(
     client: BHEClient, selector: str, kind: str | None = None
 ) -> dict[str, Any]:

@@ -73,7 +73,11 @@ async def test_query_bearing_get_signs_over_full_request_uri(monkeypatch) -> Non
         async def _fake_send(request: httpx.Request, **kwargs) -> httpx.Response:
             seen["wire_uri"] = request.url.raw_path.decode("ascii")
             seen["accept"] = request.headers.get("accept", "")
-            return httpx.Response(200, json={"data": []}, request=request)
+            # Non-empty so search doesn't fall back to a second (Cypher) call.
+            return httpx.Response(
+                200, json={"data": [{"objectid": "S-1", "name": "x", "type": "User"}]},
+                request=request,
+            )
 
         monkeypatch.setattr(client._auth, "sign_request", _spy)
         monkeypatch.setattr(client._http, "send", _fake_send)

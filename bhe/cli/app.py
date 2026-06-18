@@ -316,15 +316,19 @@ def _posture_explain(ctx: typer.Context, domain: str) -> None:
 
     if headline:
         console.print(
-            f"[bold]{name}[/bold]  exposure [bold]{_as_percent(headline.get('exposure_index'))}[/bold]  "
-            f"({headline.get('tier_zero_count', 0)} Tier Zero, "
-            f"{headline.get('critical_risk_count', 0)} critical)"
+            f"[bold]{name}[/bold] - exposure [bold]{_as_percent(headline.get('exposure_index'))}[/bold]: "
+            "that share of this domain's principals can reach a Tier Zero asset through some attack "
+            f"path ([bold]{headline.get('tier_zero_count', 0)}[/bold] Tier Zero assets, "
+            f"[bold]{headline.get('critical_risk_count', 0)}[/bold] critical findings)."
         )
     console.print(
-        "[dim]exposure = BHE's ExposurePercentage (the % of principals a finding exposes, "
-        "as shown in the web GUI; populated when butterfly analysis is on - list-type "
-        "findings like Kerberoasting won't carry it). impact = ImpactPercentage. Both are "
-        "a representative affected principal's value.[/dim]"
+        "[dim]In plain terms: 'exposure' is the % of this domain's users/computers/groups that can "
+        "take over a most-privileged (Tier Zero) asset. The findings below are what create that "
+        "exposure - fix high-severity, high-exposure rows first; they cut the most paths. "
+        "(Per-finding exposures overlap heavily, so they don't add up to the domain total.)\n"
+        "Columns -> exposure: % of principals this finding exposes to Tier Zero (BHE's "
+        "ExposurePercentage); impact: share of the attack-path surface it accounts for "
+        "(ImpactPercentage); principals: how many are affected.[/dim]"
     )
     if breakdown:
         output(
@@ -635,14 +639,24 @@ def quality(
         print_json(payload)
         return
     if mode == "estate":
-        if isinstance(payload, dict) and payload:
-            output(ctx, payload, title="Collection completeness")
+        # The completeness map is all 0-1 ratios -> show as percentages.
+        data = {
+            k: (_as_percent(v) if isinstance(v, (int, float)) else v)
+            for k, v in (payload or {}).items()
+        }
+        if data:
+            output(ctx, data, title="Collection completeness")
         else:
             console.print("[dim]No completeness data returned.[/dim]")
         return
     name = dom.get("name") or domain
     if payload:
-        output(ctx, payload, title=f"Data quality - {name}")
+        # Counts stay numeric; the *_completeness ratios render as percentages.
+        row = {
+            k: (_as_percent(v) if "completeness" in k.lower() and isinstance(v, (int, float)) else v)
+            for k, v in payload.items()
+        }
+        output(ctx, row, title=f"Data quality - {name}")
     else:
         console.print(f"[yellow]No data-quality stats for {name}.[/yellow]")
 
@@ -660,10 +674,21 @@ def clients(ctx: typer.Context) -> None:
 
 @app.command()
 def client(
-    ctx: typer.Context, client_id: str = typer.Argument(..., help="Client id.")
+    ctx: typer.Context,
+    client_id: str = typer.Argument(..., help="Client id, an id fragment, or name."),
 ) -> None:
-    """Show a single collection client's detail."""
-    output(ctx, run(ctx, lambda c: c.get_client(client_id)), title=f"Client {client_id}")
+    """Show a single collection client's detail.
+
+    Accepts the full id, a partial/last-segment id (e.g. ``41bf0d42c999``), or the
+    client name - so you don't have to copy the whole GUID out of the terminal.
+    """
+    from bhe.cli._resolve import resolve_client
+
+    async def _go(c):
+        cl = await resolve_client(c, client_id)
+        return await c.get_client(cl["id"])
+
+    output(ctx, run(ctx, _go), title=f"Client {client_id}")
 
 
 @app.command()
@@ -676,16 +701,14 @@ def jobs(
     have to deal with raw client GUIDs."""
 
     async def _go(c):
-        if current:
-            data = await c.get_current_jobs()
-        elif finished:
-            data = await c.get_finished_jobs()
-        else:
-            data = await c.get_jobs()
-        clients = await c.get_clients()
-        return data, clients
+        return await c.get_jobs(), await c.get_clients()
 
     raw_jobs, clients = run(ctx, _go)
+    # Filter client-side by end-time: BHE has no /jobs/current or /finished route.
+    if current:
+        raw_jobs = [j for j in raw_jobs if not j.get("end_time")]
+    elif finished:
+        raw_jobs = [j for j in raw_jobs if j.get("end_time")]
     by_id = {cl.get("id"): cl for cl in clients}
     rows = []
     for j in raw_jobs:
@@ -1029,7 +1052,10 @@ def entity(
             if not oid or not plural or node_kind not in kinds:
                 return {"__rel_error__":
                         f"'{aspect}' isn't available for {name} ({node_kind or 'unknown kind'})."}
-            return {"__rel__": await c.get_entity_relationship(plural, oid, slug), "__name__": name}
+            # Ask for the graph form so we get the edges (the permission/right), not
+            # just a flat list of related objects.
+            rel = await c.get_entity_relationship(plural, oid, slug, params={"type": "graph"})
+            return {"__rel__": rel, "__name__": name}
         method = _ENTITY_GETTERS.get(node_kind)
         if method and oid:
             return await getattr(c, method)(oid)
@@ -1041,11 +1067,26 @@ def entity(
         err_console.print(f"[yellow]{result['__rel_error__']}[/yellow]")
         raise typer.Exit(code=1)
     if isinstance(result, dict) and "__rel__" in result:
-        from bhe.parsing.graph import nodes_table
+        from bhe.parsing.graph import nodes_table, parse_graph
 
         rel, name = result["__rel__"], result["__name__"]
         if settings(ctx).as_json:
             print_json(rel)
+            return
+        nodes, edges = parse_graph(rel)
+        if edges:
+            # Graph form: show the relationship/right on each edge (from -> to).
+            by_link = {n.link_id: n for n in nodes if n.link_id}
+
+            def _nm(link: str) -> str:
+                n = by_link.get(link)
+                return ((n.properties or {}).get("name") or n.label or n.object_id) if n else link
+
+            erows = [
+                {"from": _nm(e.source), "right": e.kind or e.label or "", "to": _nm(e.target)}
+                for e in edges
+            ]
+            output(ctx, erows, columns=["from", "right", "to"], title=f"{name} - {aspect}")
             return
         rows = nodes_table(rel)
         if not rows:  # not a graph payload - fall back to a list/count envelope
