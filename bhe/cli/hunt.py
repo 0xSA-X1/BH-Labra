@@ -152,16 +152,30 @@ def tier_zero(
 def hybrid(
     ctx: typer.Context,
     source: str = typer.Argument(..., help="On-prem AD principal name."),
+    to: str = typer.Option(
+        None, "--to", "-t",
+        help="Target platform: azure|okta|github|jamf, or a raw node-label prefix. "
+        "Default: all of them.",
+    ),
     all_paths: bool = typer.Option(False, "--all", "-a", help="All shortest paths."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the Cypher, don't run."),
 ) -> None:
-    """Hybrid path from an on-prem AD principal to ANY Azure/Entra node."""
+    """Hybrid path from an AD principal to ANY cloud/SaaS node (Azure + OpenGraph).
+
+    Covers Azure/Entra and OpenGraph platforms (Okta, GitHub, Jamf). ``--to``
+    scopes to one platform (or a raw label prefix for a custom OpenGraph source).
+    """
+    if to:
+        prefixes = (library.PLATFORM_PREFIXES.get(to.lower(), to),)
+    else:
+        prefixes = library.DEFAULT_HYBRID_PREFIXES
+    desc = to or "Azure/OpenGraph"
     _principal_recipe(
         ctx,
         selectors=[source],
-        build=lambda s: library.hybrid_path_to_azure(s, all_paths=all_paths),
+        build=lambda s: library.cross_platform_path(s, prefixes, all_paths=all_paths),
         dry_run=dry_run,
-        target_desc="Azure/Entra",
+        target_desc=desc,
     )
 
 

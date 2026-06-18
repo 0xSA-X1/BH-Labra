@@ -420,6 +420,13 @@ def domain_of(name: str, kind: str = "", domain: str = "") -> str:
     """
     if domain and domain.strip():
         return domain.strip()
+    # Azure/OpenGraph nodes carry no AD domain; label them by platform from the
+    # node-kind prefix (AZUser -> Azure, Okta_* -> Okta, ...) so cross-platform
+    # leaks read clearly instead of collapsing into one "(unknown)" bucket.
+    k = kind or ""
+    for prefix, label in (("AZ", "Azure"), ("Okta", "Okta"), ("GitHub", "GitHub"), ("Jamf", "Jamf")):
+        if k.startswith(prefix):
+            return label
     n = (name or "").strip()
     suffix = (n.rsplit("@", 1)[1] if "@" in n else n).strip().strip(".")
     if "." not in suffix:

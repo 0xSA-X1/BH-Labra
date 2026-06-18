@@ -7,11 +7,20 @@ from bhe.queries import library
 
 
 def test_hybrid_builder_targets_azure_labels() -> None:
-    q = library.hybrid_path_to_azure("ALICE@CORP.LOCAL")
+    q = library.hybrid_path_to_azure("ALICE@CORP.LOCAL")  # azure-only convenience
     assert "shortestPath" in q
-    assert "STARTS WITH 'AZ'" in q
+    assert "'AZ'" in q and "STARTS WITH pfx" in q
     assert "ALICE@CORP.LOCAL" in q
     assert_cypher_readonly(q)  # must not raise
+
+
+def test_cross_platform_path_covers_opengraph() -> None:
+    q = library.cross_platform_path("S-1-oid", library.DEFAULT_HYBRID_PREFIXES)
+    # Default hybrid spans Azure AND OpenGraph platforms (Okta/GitHub/Jamf).
+    for prefix in ("AZ", "Okta", "GitHub", "Jamf"):
+        assert f"'{prefix}'" in q
+    assert "s.objectid = 'S-1-oid'" in q
+    assert_cypher_readonly(q)
 
 
 def test_tier_zero_builder_uses_tags_and_all_paths() -> None:

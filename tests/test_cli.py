@@ -174,11 +174,36 @@ def test_entity_ambiguous_exits_2() -> None:
     assert result.exit_code == 2
 
 
+def test_entity_show_sessions() -> None:
+    result = _invoke("--mock", "entity", "ALICE@CORP.LOCAL", "--show", "sessions")
+    assert result.exit_code == 0
+    assert "DC01.CORP.LOCAL" in result.stdout  # the session host
+
+
+def test_entity_show_rejects_unknown_aspect() -> None:
+    result = _invoke("--mock", "entity", "ALICE@CORP.LOCAL", "--show", "bogus")
+    assert result.exit_code == 2
+
+
+def test_entity_show_wrong_kind_is_clean() -> None:
+    # 'members' is group-only; ALICE is a user -> friendly error, not a crash.
+    result = _invoke("--mock", "entity", "ALICE@CORP.LOCAL", "--show", "members")
+    assert result.exit_code == 1
+
+
 def test_hunt_hybrid_dry_run_emits_cypher() -> None:
     result = _invoke("--mock", "hunt", "hybrid", "ALICE@CORP.LOCAL", "--dry-run")
     assert result.exit_code == 0
-    assert "STARTS WITH 'AZ'" in result.stdout
+    # Default hybrid now spans Azure + OpenGraph (Okta/GitHub/Jamf).
+    assert "'AZ'" in result.stdout and "'Okta'" in result.stdout
     assert "ALICE@CORP.LOCAL" in result.stdout
+
+
+def test_hunt_hybrid_to_one_platform() -> None:
+    result = _invoke("--mock", "hunt", "hybrid", "ALICE@CORP.LOCAL", "--to", "okta", "--dry-run")
+    assert result.exit_code == 0
+    assert "'Okta'" in result.stdout
+    assert "'AZ'" not in result.stdout  # scoped to okta only
 
 
 def test_hunt_tier_zero_dry_run_emits_cypher() -> None:
@@ -275,6 +300,35 @@ def test_posture_explain_breaks_down_findings() -> None:
 def test_posture_explain_requires_a_domain() -> None:
     result = _invoke("--mock", "posture", "--explain")  # no domain
     assert result.exit_code == 2
+
+
+def test_tier_zero_lists_seeds() -> None:
+    result = _invoke("--mock", "--json", "tier-zero")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert any("DOMAIN ADMINS" in r.get("name", "") for r in rows)
+
+
+def test_tier_zero_scoped_to_domain() -> None:
+    result = _invoke("--mock", "--json", "tier-zero", "CORP.LOCAL")
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows and all(r.get("domain") == "CORP.LOCAL" for r in rows)
+
+
+def test_quality_estate_completeness() -> None:
+    result = _invoke("--mock", "--json", "quality")
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert "session_completeness" in data
+
+
+def test_quality_domain_detail() -> None:
+    result = _invoke("--mock", "--json", "quality", "CORP.LOCAL")
+    assert result.exit_code == 0
+    row = json.loads(result.stdout)
+    assert row.get("users") == 1200
+    assert "session_completeness" in row
 
 
 def test_choke_tier_zero_ranks_helpdesk() -> None:

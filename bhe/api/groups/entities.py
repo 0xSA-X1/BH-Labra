@@ -102,6 +102,19 @@ class EntitiesMixin(GroupMixin):
         """Get GPO entity detail."""
         return await self._request("GET", f"/api/v2/gpos/{object_id}")
 
+    async def get_entity_relationship(
+        self, plural: str, object_id: str, slug: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Generic entity-relationship read (``GET /api/v2/{plural}/{id}/{slug}``).
+
+        Backs ``bhe entity --show`` for sessions / members / admin-rights /
+        controllers / etc.  ``plural`` is the kind's collection (users/computers/
+        groups/...), ``slug`` the relationship path segment.
+        """
+        return await self._request(
+            "GET", f"/api/v2/{plural}/{object_id}/{slug}", params=params
+        )
+
     async def get_user_memberships(self, object_id: str) -> dict[str, Any]:
         """Get a user's group memberships."""
         return await self._request("GET", f"/api/v2/users/{object_id}/memberships")

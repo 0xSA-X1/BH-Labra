@@ -54,20 +54,45 @@ def path_to_tier_zero(source_id: str, all_paths: bool = False) -> str:
     )
 
 
-def hybrid_path_to_azure(source_id: str, all_paths: bool = False) -> str:
-    """Shortest path from an on-prem AD principal (by objectid) to *any* Azure node.
+# Friendly platform name -> the node-label PREFIX BloodHound/OpenGraph uses for
+# that platform's nodes.  Azure is built in (``AZ``); Okta/GitHub/Jamf come from
+# OpenGraph collectors (e.g. Okta uses ``Okta_*`` kinds).
+PLATFORM_PREFIXES: dict[str, str] = {
+    "azure": "AZ",
+    "entra": "AZ",
+    "az": "AZ",
+    "okta": "Okta",
+    "github": "GitHub",
+    "jamf": "Jamf",
+}
 
-    Azure nodes carry ``AZ``-prefixed labels in BloodHound (AZUser, AZGroup,
-    AZServicePrincipal, ...), so matching on the label prefix finds a hybrid path
-    regardless of which specific edge crosses the on-prem->cloud boundary.
+# Default hybrid targets: every non-AD platform we know about, so a single
+# ``hunt hybrid`` surfaces Azure *and* OpenGraph (Okta/GitHub/Jamf) crossings.
+DEFAULT_HYBRID_PREFIXES: tuple[str, ...] = ("AZ", "Okta", "GitHub", "Jamf")
+
+
+def cross_platform_path(
+    source_id: str, prefixes: tuple[str, ...] | list[str], all_paths: bool = False
+) -> str:
+    """Shortest path from an AD principal (by objectid) to *any* non-AD platform node.
+
+    Matches the target by node-label prefix, so it finds a hybrid path to Azure or
+    any OpenGraph platform (Okta/GitHub/Jamf, or a custom one) regardless of which
+    specific edge crosses the on-prem -> cloud/SaaS boundary.
     """
     finder = "allShortestPaths" if all_paths else "shortestPath"
+    quoted = ", ".join(f"'{escape(p)}'" for p in prefixes)
     return (
         f"MATCH p={finder}((s)-[*1..]->(t)) "
         f"WHERE s.objectid = '{escape(source_id)}' "
-        "AND any(lbl IN labels(t) WHERE lbl STARTS WITH 'AZ') "
+        f"AND any(lbl IN labels(t) WHERE any(pfx IN [{quoted}] WHERE lbl STARTS WITH pfx)) "
         "RETURN p"
     )
+
+
+def hybrid_path_to_azure(source_id: str, all_paths: bool = False) -> str:
+    """Shortest path from an on-prem AD principal (by objectid) to *any* Azure node."""
+    return cross_platform_path(source_id, ("AZ",), all_paths=all_paths)
 
 
 def node_by_name(name: str) -> str:

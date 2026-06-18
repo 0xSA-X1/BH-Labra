@@ -1,0 +1,17 @@
+{
+  "data": {
+    "nodes": {
+      "1": {
+        "objectId": "S-1-5-21-1111111111-2222222222-3333333333-1001",
+        "label": "DC01.CORP.LOCAL",
+        "kind": "Computer",
+        "properties": {
+          "name": "DC01.CORP.LOCAL",
+          "domain": "CORP.LOCAL",
+          "objectid": "S-1-5-21-1111111111-2222222222-3333333333-1001"
+        }
+      }
+    },
+    "edges": []
+  }
+}

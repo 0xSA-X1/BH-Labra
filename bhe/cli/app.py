@@ -573,6 +573,80 @@ def triage(
     _skipped_note()
 
 
+@app.command("tier-zero")
+def tier_zero_cmd(
+    ctx: typer.Context,
+    domain: str = typer.Argument(None, help="Optional domain name/id to scope to."),
+) -> None:
+    """List Tier Zero / high-value principals (optionally one domain).
+
+    These are the crown jewels everything else is measured against - the seed set
+    ``choke`` / ``leaks`` / ``map`` funnel into.
+    """
+    from bhe.parsing.graph import nodes_table
+
+    async def _go(c):
+        dom = await resolve_domain(c, domain) if domain else None
+        return nodes_table(await c.cypher_query(tier_zero_seed_query())), dom
+
+    rows, dom = run(ctx, _go)
+    if dom is not None:
+        want = str(dom.get("name", "")).upper()
+        rows = [r for r in rows if str(r.get("domain", "")).upper() == want]
+    rows.sort(key=lambda r: (str(r.get("domain", "")), str(r.get("kind", "")), str(r.get("name", ""))))
+    if settings(ctx).as_json:
+        print_json(rows)
+        return
+    scope = f" - {dom.get('name')}" if dom is not None else ""
+    output(ctx, rows, columns=["name", "kind", "domain", "objectid"], title=f"Tier Zero{scope}")
+
+
+def _latest_quality_row(rows: list) -> dict:
+    """The most recent data-quality snapshot (data-quality-stats is historical)."""
+    return max(rows, key=lambda r: str(r.get("created_at", "")), default={})
+
+
+@app.command()
+def quality(
+    ctx: typer.Context,
+    domain: str = typer.Argument(None, help="Optional AD domain to detail (e.g. CORP.LOCAL)."),
+) -> None:
+    """Collection data-quality / completeness - is the data trustworthy?
+
+    No domain: estate completeness (% of local admins & sessions collected). With a
+    domain: that domain's latest collection counts + completeness. Run this BEFORE
+    trusting findings - missing sessions/local-groups blind the attack-path analysis.
+    """
+    from bhe.api.client import BHEClientError
+
+    async def _go(c):
+        dom = await resolve_domain(c, domain) if domain else None
+        if dom is not None:
+            try:
+                resp = await c.get_ad_domain_quality(dom["id"])
+            except BHEClientError:
+                resp = None
+            return "domain", dom, _latest_quality_row(_posture_rows(resp) if resp else [])
+        comp = await c.get_completeness()
+        return "estate", None, (comp.get("data", comp) if isinstance(comp, dict) else comp)
+
+    mode, dom, payload = run(ctx, _go)
+    if settings(ctx).as_json:
+        print_json(payload)
+        return
+    if mode == "estate":
+        if isinstance(payload, dict) and payload:
+            output(ctx, payload, title="Collection completeness")
+        else:
+            console.print("[dim]No completeness data returned.[/dim]")
+        return
+    name = dom.get("name") or domain
+    if payload:
+        output(ctx, payload, title=f"Data quality - {name}")
+    else:
+        console.print(f"[yellow]No data-quality stats for {name}.[/yellow]")
+
+
 # ----------------------------------------------------------------------------
 # Collection: clients, jobs, schedules
 # ----------------------------------------------------------------------------
@@ -902,6 +976,22 @@ _ENTITY_GETTERS = {
     "gpo": "get_gpo",
 }
 
+_ENTITY_PLURAL = {
+    "user": "users", "computer": "computers", "group": "groups",
+    "domain": "domains", "gpo": "gpos",
+}
+
+# --show aspect -> (endpoint slug, the kinds it applies to).
+_ENTITY_RELS = {
+    "sessions": ("sessions", {"user", "computer", "group"}),
+    "members": ("members", {"group"}),
+    "memberships": ("memberships", {"user", "group"}),
+    "admin-rights": ("admin-rights", {"user", "computer", "group"}),
+    "admins": ("admin-users", {"computer"}),
+    "controllers": ("controllers", {"user", "computer", "group", "domain", "gpo"}),
+    "controllables": ("controllables", {"user", "computer", "group"}),
+}
+
 
 @app.command()
 def entity(
@@ -910,18 +1000,63 @@ def entity(
     kind: str = typer.Option(
         None, "--kind", "-k", help=f"Hint the kind: {', '.join(_ENTITY_GETTERS)}."
     ),
+    show: str = typer.Option(
+        None, "--show", "-s",
+        help=f"Pivot to a relationship instead of properties: {', '.join(_ENTITY_RELS)}.",
+    ),
 ) -> None:
-    """Show entity detail by NAME or objectid (resolves names; disambiguates)."""
+    """Show entity detail by NAME or objectid; ``--show`` pivots to a relationship.
+
+    Default view is the node's properties. ``--show sessions`` (who logged in
+    where), ``--show members`` / ``--show admin-rights`` / ``--show controllers``
+    (the ACL attack surface), etc. surface the node's relationships.
+    """
+    aspect = show.lower() if show else None
+    if aspect and aspect not in _ENTITY_RELS:
+        err_console.print(
+            f"[red]Unknown --show '{show}'.[/red] Choose one of: {', '.join(_ENTITY_RELS)}."
+        )
+        raise typer.Exit(code=2)
 
     async def _go(c):
         node = await resolve_principal(c, selector, kind)
         node_kind = (kind or node.get("type") or "").lower()
+        oid = node.get("objectid")
+        name = node.get("name", selector)
+        if aspect:
+            slug, kinds = _ENTITY_RELS[aspect]
+            plural = _ENTITY_PLURAL.get(node_kind)
+            if not oid or not plural or node_kind not in kinds:
+                return {"__rel_error__":
+                        f"'{aspect}' isn't available for {name} ({node_kind or 'unknown kind'})."}
+            return {"__rel__": await c.get_entity_relationship(plural, oid, slug), "__name__": name}
         method = _ENTITY_GETTERS.get(node_kind)
-        if method and node.get("objectid"):
-            return await getattr(c, method)(node["objectid"])
+        if method and oid:
+            return await getattr(c, method)(oid)
         return node  # fall back to the resolved search record
 
     result = run(ctx, _go)
+
+    if isinstance(result, dict) and "__rel_error__" in result:
+        err_console.print(f"[yellow]{result['__rel_error__']}[/yellow]")
+        raise typer.Exit(code=1)
+    if isinstance(result, dict) and "__rel__" in result:
+        from bhe.parsing.graph import nodes_table
+
+        rel, name = result["__rel__"], result["__name__"]
+        if settings(ctx).as_json:
+            print_json(rel)
+            return
+        rows = nodes_table(rel)
+        if not rows:  # not a graph payload - fall back to a list/count envelope
+            data = rel.get("data", rel) if isinstance(rel, dict) else rel
+            rows = data if isinstance(data, list) else []
+        if rows:
+            output(ctx, rows, title=f"{name} - {aspect}")
+        else:
+            console.print(f"[dim]No {aspect} for {name}.[/dim]")
+        return
+
     if settings(ctx).as_json:
         print_json(result)
         return

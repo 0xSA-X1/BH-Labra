@@ -27,6 +27,7 @@ from bhe.api.groups.events import EventsMixin
 from bhe.api.groups.jobs import JobsMixin
 from bhe.api.groups.meta import MetaMixin
 from bhe.api.groups.posture import PostureMixin
+from bhe.api.groups.quality import DataQualityMixin
 from bhe.api.hmac_auth import HMACAuth
 from bhe.api.mock import MockTransport
 from bhe.api.readonly import assert_request_allowed
@@ -325,6 +326,7 @@ class BHEClient(
     AuditMixin,
     AttackPathsMixin,
     PostureMixin,
+    DataQualityMixin,
     MetaMixin,
     AnalysisMixin,
     EntitiesMixin,
