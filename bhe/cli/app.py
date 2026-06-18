@@ -1345,58 +1345,6 @@ def leaks(
     )
 
 
-@app.command()
-def map(
-    ctx: typer.Context,
-    target: str = typer.Argument(
-        None, help="Principal name/id to funnel into. Omit when using --tier-zero."
-    ),
-    tier_zero: bool = typer.Option(
-        False, "--tier-zero", "-z", help="Seed from ALL Tier Zero nodes."
-    ),
-    domain: str = typer.Option(
-        None, "--domain", "-d",
-        help="Scope the Tier-Zero seeds to one domain (name or id). Implies --tier-zero.",
-    ),
-    fmt: str = typer.Option("mermaid", "--format", "-f", help="mermaid | dot"),
-    max_depth: int = typer.Option(4, "--max-depth", help="Backward hops to walk."),
-    fanin: int = typer.Option(50, "--fanin", help="Mass-node truncation threshold."),
-    bundle: int = typer.Option(
-        8, "--bundle", help="Collapse >= N leaf sources per node into one meta-node."
-    ),
-    refresh: bool = typer.Option(False, "--refresh", help="Ignore any cached snapshot."),
-    concurrency: int = typer.Option(8, "--concurrency", help="Max parallel probe queries."),
-) -> None:
-    """Emit a condensed, bundled attack-graph (Mermaid/DOT) of the funnel into T0.
-
-    Choke points and Tier Zero are highlighted; large leaf-source fan-ins collapse
-    into ``(N principals)`` meta-nodes - the visual remediation plan.  ``--domain``
-    scopes the funnel to one domain's Tier Zero.
-    """
-    from bhe.render import to_dot, to_mermaid
-
-    if domain and not target:
-        tier_zero = True  # a domain scope is meaningless without a Tier-Zero seed
-    if not target and not tier_zero:
-        err_console.print("[red]Give a target name/id, or pass --tier-zero / --domain.[/red]")
-        raise typer.Exit(code=2)
-
-    snapshot, cache_age = scoped_snapshot(
-        ctx, target=target, tier_zero=tier_zero, max_depth=max_depth, fanin=fanin,
-        domain=domain, refresh=refresh, concurrency=concurrency,
-    )
-    if snapshot is None or not snapshot.nodes:
-        err_console.print("[yellow]No seeds resolved / nothing reaches the target.[/yellow]")
-        raise typer.Exit(code=1)
-    if cache_age is not None:  # note on stderr so stdout stays pure for piping
-        err_console.print(f"[dim]Reused cached snapshot ({cache_age / 60:.0f}m old).[/dim]")
-
-    choke_ids = {cp.objectid for cp in rank_choke_points(snapshot)[0]}
-    renderer = to_dot if fmt.lower() == "dot" else to_mermaid
-    # Print raw (no Rich markup/wrapping) so it pastes cleanly into a viewer.
-    print(renderer(snapshot, choke_ids, bundle))
-
-
 # ----------------------------------------------------------------------------
 # Generic escape hatch
 # ----------------------------------------------------------------------------

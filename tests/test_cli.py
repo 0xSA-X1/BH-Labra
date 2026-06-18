@@ -416,18 +416,6 @@ def test_leaks_finds_cross_domain() -> None:
     assert leak["into_tier_zero"] == "yes"
 
 
-def test_map_mermaid_and_dot() -> None:
-    m = _invoke("--mock", "map", "--tier-zero")
-    assert m.exit_code == 0
-    assert m.stdout.startswith("graph RL")
-    assert "DOMAIN ADMINS@CORP.LOCAL" in m.stdout
-    assert "HELPDESK@CORP.LOCAL" in m.stdout
-
-    d = _invoke("--mock", "map", "--tier-zero", "--format", "dot")
-    assert d.exit_code == 0
-    assert d.stdout.startswith("digraph")
-
-
 def test_info_shows_paths_and_version() -> None:
     result = _invoke("--mock", "--json", "info")
     assert result.exit_code == 0

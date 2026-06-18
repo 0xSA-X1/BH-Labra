@@ -5,15 +5,15 @@
 
 `bhe` gives you two complementary tools:
 
-- the **backward engine** (`choke` / `leaks` / `map`) — the big-picture, scalable
-  view of everything funneling into the crown jewels;
+- the **backward engine** (`choke` / `leaks`) — the big-picture, scalable view of
+  everything funneling into the crown jewels;
 - **`hunt`** + **`cypher`** — targeted, specific paths between objects.
 
-## The backward engine — `choke`, `leaks`, `map`
+## The backward engine — `choke`, `leaks`
 
 These seed at Tier Zero and walk *backward* one bounded, batched, concurrent hop
 at a time, so they scale to million-object tenants. They share one cached snapshot
-per (tenant, seed, depth), so running all three over the same seeds is instant.
+per (tenant, seed, depth), so running both over the same seeds is instant.
 
 ### `choke` — the highest-leverage fixes
 
@@ -38,17 +38,6 @@ $ bhe leaks --domain CORP.LOCAL
 Aggregates edges whose endpoints are in **different domains or platforms** —
 where one domain (or Azure/Okta/GitHub/Jamf) reaches into another's crown jewels.
 Flags crossings that land directly on Tier Zero.
-
-### `map` — the picture
-
-```console
-$ bhe map --tier-zero                  # Mermaid (default)
-$ bhe map --tier-zero --format dot     # Graphviz DOT
-$ bhe map --domain CORP.LOCAL | pbcopy # copy to paste into a viewer
-```
-
-A condensed graph: choke points and Tier Zero are styled; large leaf fan-ins
-collapse into `(N principals)` meta-nodes. Printed raw so it pastes cleanly.
 
 **Tuning:** `--max-depth` (hops back), `--fanin` (mass-node threshold),
 `--concurrency`, `--refresh` (rebuild the cache).

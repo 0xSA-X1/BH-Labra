@@ -91,8 +91,8 @@ $ bhe --mock quality CORP.LOCAL
 
 ## Backward attack-path engine
 
-All three share one cached backward snapshot per (tenant, seed, depth) — so
-`choke` → `leaks` → `map` over the same seeds are instant. `--refresh` rebuilds.
+Both share one cached backward snapshot per (tenant, seed, depth) — so
+`choke` → `leaks` over the same seeds is instant. `--refresh` rebuilds.
 Common flags: `--tier-zero/-z` (seed from all Tier Zero), `--domain/-d <domain>`
 (scope to one domain's Tier Zero; implies `--tier-zero`), `--max-depth`,
 `--fanin`, `--concurrency`.
@@ -110,15 +110,6 @@ $ bhe --mock choke --tier-zero -d CORP.LOCAL
 **Cross-domain / cross-platform leakage** into the crown jewels — boundary
 crossings (incl. Azure/Okta/GitHub/Jamf) ranked by volume, flagged when they land
 directly on Tier Zero. `bhe --mock leaks --tier-zero`
-
-### `bhe map [target] [--tier-zero] [-d domain] [--format dot] [--bundle N]`
-A **condensed, bundled attack graph** (Mermaid by default, or `--format dot`).
-Choke points and Tier Zero are styled; large leaf fan-ins collapse into
-`(N principals)` meta-nodes. Printed raw for piping into a viewer.
-```console
-$ bhe --mock map --tier-zero
-$ bhe --mock map --tier-zero --format dot
-```
 
 ---
 

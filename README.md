@@ -78,7 +78,6 @@ default; add `--json` for raw output (`bhe get` is always JSON).
 |---|---|
 | `bhe choke --tier-zero [-d domain]` | **Choke points whose fix cuts the most paths** (+ the Tier Zero each reaches) |
 | `bhe leaks [--tier-zero] [-d domain]` | **Cross-domain / cross-platform leakage** into the crown jewels |
-| `bhe map [--tier-zero] [-d domain] [-f dot]` | **Condensed, bundled attack graph** (Mermaid/DOT) |
 
 **Search, entities & relationships**
 | Command | What it does |
@@ -126,16 +125,15 @@ $ bhe posture                          # 2. which domain is most exposed?
 $ bhe triage                           # 3. which finding types drive it, estate-wide
 $ bhe choke --tier-zero -d CORP.LOCAL  # 4. the highest-leverage fixes for that domain
 $ bhe leaks -d CORP.LOCAL              # 5. what leaks in across boundaries
-$ bhe map -d CORP.LOCAL | pbcopy       # 6. a picture for the report
 ```
 
 - **`posture` / `triage` / `quality`** use BHE's precomputed stats (no Cypher) —
   instant even on millions of objects.
-- **`choke` / `leaks` / `map`** walk **backward from Tier Zero** one bounded,
-  batched, concurrent hop at a time — never a global path query. High-degree
-  "mass" nodes are truncated without enumeration; choke ranking uses a dominator
-  tree (near-linear). The snapshot is **cached per tenant** (1h TTL), so
-  `choke` → `leaks` → `map` over the same seeds are instant (`--refresh` rebuilds).
+- **`choke` / `leaks`** walk **backward from Tier Zero** one bounded, batched,
+  concurrent hop at a time — never a global path query. High-degree "mass" nodes
+  are truncated without enumeration; choke ranking uses a dominator tree
+  (near-linear). The snapshot is **cached per tenant** (1h TTL), so `choke` →
+  `leaks` over the same seeds are instant (`--refresh` rebuilds).
 - `--domain` scopes any of these to one domain — work one domain at a time.
 
 ## Install

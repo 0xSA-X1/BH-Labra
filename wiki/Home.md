@@ -33,7 +33,7 @@ End-to-end, screenshot-friendly workflows:
 2. **[Exposure Deep-Dive](Use-Case-Exposure-Deep-Dive)** — what a domain's
    exposure % actually means and what drives it.
 3. **[Attack-Path Hunting](Use-Case-Attack-Path-Hunting)** — choke points,
-   leakage, maps, and guided Cypher.
+   leakage, and guided Cypher.
 4. **[OpenGraph & Hybrid Paths](Use-Case-OpenGraph-Hybrid-Paths)** — Okta, GitHub,
    Jamf, and Azure crossings.
 5. **[Collection Health & Audit](Use-Case-Collection-Health-and-Audit)** — is the
@@ -49,7 +49,6 @@ $ bhe posture                          # which domains are most exposed (as %)
 $ bhe triage                           # which finding types drive it, estate-wide
 $ bhe choke --tier-zero -d CORP.LOCAL  # the highest-leverage fixes for one domain
 $ bhe leaks -d CORP.LOCAL              # what leaks in across boundaries
-$ bhe map -d CORP.LOCAL | pbcopy       # a graph for the report
 ```
 
 ## What makes it different
@@ -65,7 +64,7 @@ $ bhe map -d CORP.LOCAL | pbcopy       # a graph for the report
 
 - **Posture / start-here:** `posture`, `posture --explain`, `triage`, `tier-zero`,
   `findings`, `quality`
-- **Engine:** `choke`, `leaks`, `map`
+- **Engine:** `choke`, `leaks`
 - **Entities:** `search`, `entity`, `entity --show <rel>`
 - **Pathfinding:** `hunt path|tier-zero|hybrid|kerberoastable|asrep`, `cypher`
 - **Collection:** `clients`, `client`, `jobs`, `job`, `events`, `audit`

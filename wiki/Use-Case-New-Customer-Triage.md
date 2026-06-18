@@ -61,7 +61,6 @@ $ bhe posture CORP.LOCAL --explain    # WHY is this domain's exposure what it is
 $ bhe triage -d CORP.LOCAL            # its findings, ranked
 $ bhe choke --domain CORP.LOCAL       # <- the remediation gold
 $ bhe leaks --domain CORP.LOCAL       # what leaks in across boundaries
-$ bhe map --domain CORP.LOCAL         # the funnel as a diagram for the report
 ```
 
 **`bhe choke`** is the one to lead remediation with: it ranks the objects where
@@ -75,7 +74,7 @@ asset each reaches. That's an effort-aware, highest-leverage fix list.
 Work down the `choke` list — each row is "fix this object → cut N% of paths to a
 crown jewel." Use `bhe entity <name> --show controllers` and
 `bhe hunt tier-zero <name>` (see [Attack-Path Hunting](Use-Case-Attack-Path-Hunting))
-to capture the exact paths for the report, and `bhe map` for the picture.
+to capture the exact paths for the report.
 
 ---
 
@@ -86,9 +85,8 @@ bhe quality                          # 1. is the data good?
 bhe posture ; bhe triage             # 2. worst domain + what drives it
 bhe choke --domain <D>               # 3. the prioritized fix list
 bhe leaks --domain <D>               # 4. boundary problems
-bhe map --domain <D> | pbcopy        # 5. the diagram
 ```
 
 **One caveat:** `triage`/`findings`/`posture --explain` rely on findings data,
 which exists for collected **AD** domains — Entra/Azure tenants show up as
-"skipped." The `choke`/`leaks`/`map` engine works on every platform.
+"skipped." The `choke`/`leaks` engine works on every platform.

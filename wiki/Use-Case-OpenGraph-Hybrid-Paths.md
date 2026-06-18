@@ -11,8 +11,8 @@ platform-prefixed, e.g. Azure `AZ*`, Okta `Okta_*`), so everything graph-native 
 ## What already sees OpenGraph (no special flags)
 
 - **`cypher`** — query any node kind directly.
-- **`choke` / `leaks` / `map`** — platform-agnostic; they walk *any* edge into Tier
-  Zero, so OpenGraph nodes/edges on a path to a tagged crown jewel show up.
+- **`choke` / `leaks`** — platform-agnostic; they walk *any* edge into Tier Zero,
+  so OpenGraph nodes/edges on a path to a tagged crown jewel show up.
 - **`search` / `entity`** — find and inspect OpenGraph objects.
 
 > ℹ️ For OpenGraph crown jewels to seed the backward engine, they must be **tagged
