@@ -1052,10 +1052,16 @@ def entity(
             if not oid or not plural or node_kind not in kinds:
                 return {"__rel_error__":
                         f"'{aspect}' isn't available for {name} ({node_kind or 'unknown kind'})."}
-            # Ask for the graph form so we get the edges (the permission/right), not
-            # just a flat list of related objects.
-            rel = await c.get_entity_relationship(plural, oid, slug, params={"type": "graph"})
-            return {"__rel__": rel, "__name__": name}
+            from bhe.parsing.graph import parse_graph
+
+            # Prefer the graph form (its edges carry the permission/right). If the
+            # tenant returns no edges for it, fall back to the flat list so we still
+            # show the related objects (the view that worked before).
+            graph = await c.get_entity_relationship(plural, oid, slug, params={"type": "graph"})
+            if parse_graph(graph)[1]:  # has edges
+                return {"__rel_graph__": graph, "__name__": name}
+            listed = await c.get_entity_relationship(plural, oid, slug)
+            return {"__rel_list__": listed, "__name__": name}
         method = _ENTITY_GETTERS.get(node_kind)
         if method and oid:
             return await getattr(c, method)(oid)
@@ -1066,31 +1072,36 @@ def entity(
     if isinstance(result, dict) and "__rel_error__" in result:
         err_console.print(f"[yellow]{result['__rel_error__']}[/yellow]")
         raise typer.Exit(code=1)
-    if isinstance(result, dict) and "__rel__" in result:
-        from bhe.parsing.graph import nodes_table, parse_graph
+    if isinstance(result, dict) and "__rel_graph__" in result:
+        from bhe.parsing.graph import parse_graph
 
-        rel, name = result["__rel__"], result["__name__"]
+        graph, name = result["__rel_graph__"], result["__name__"]
         if settings(ctx).as_json:
-            print_json(rel)
+            print_json(graph)
             return
-        nodes, edges = parse_graph(rel)
-        if edges:
-            # Graph form: show the relationship/right on each edge (from -> to).
-            by_link = {n.link_id: n for n in nodes if n.link_id}
+        nodes, edges = parse_graph(graph)
+        by_link = {n.link_id: n for n in nodes if n.link_id}
 
-            def _nm(link: str) -> str:
-                n = by_link.get(link)
-                return ((n.properties or {}).get("name") or n.label or n.object_id) if n else link
+        def _nm(link: str) -> str:
+            n = by_link.get(link)
+            return ((n.properties or {}).get("name") or n.label or n.object_id) if n else link
 
-            erows = [
-                {"from": _nm(e.source), "right": e.kind or e.label or "", "to": _nm(e.target)}
-                for e in edges
-            ]
-            output(ctx, erows, columns=["from", "right", "to"], title=f"{name} - {aspect}")
+        erows = [
+            {"from": _nm(e.source), "right": e.kind or e.label or "", "to": _nm(e.target)}
+            for e in edges
+        ]
+        output(ctx, erows, columns=["from", "right", "to"], title=f"{name} - {aspect}")
+        return
+    if isinstance(result, dict) and "__rel_list__" in result:
+        from bhe.parsing.graph import nodes_table
+
+        listed, name = result["__rel_list__"], result["__name__"]
+        if settings(ctx).as_json:
+            print_json(listed)
             return
-        rows = nodes_table(rel)
+        rows = nodes_table(listed)
         if not rows:  # not a graph payload - fall back to a list/count envelope
-            data = rel.get("data", rel) if isinstance(rel, dict) else rel
+            data = listed.get("data", listed) if isinstance(listed, dict) else listed
             rows = data if isinstance(data, list) else []
         if rows:
             output(ctx, rows, title=f"{name} - {aspect}")
