@@ -46,7 +46,6 @@ latest.
 $ bhe --mock posture
 $ bhe --mock posture CORP.LOCAL
 ```
-> 📸 **Screenshot:** `bhe --mock posture`
 
 ### `bhe posture <domain> --explain`
 **Breaks down what drives a domain's exposure** — the headline number plus the
@@ -55,7 +54,6 @@ impact %). See [Exposure Deep-Dive](Use-Case-Exposure-Deep-Dive).
 ```console
 $ bhe --mock posture CORP.LOCAL --explain
 ```
-> 📸 **Screenshot:** `bhe --mock posture CORP.LOCAL --explain`
 
 ### `bhe triage [--domain/-d <domain>] [--top/-n N] [--by-type]`
 Ranks attack-path **findings across the whole estate** (severity × affected
@@ -67,7 +65,6 @@ $ bhe --mock triage
 $ bhe --mock triage --by-type
 $ bhe --mock triage -d CORP.LOCAL
 ```
-> 📸 **Screenshot:** `bhe --mock triage`
 
 ### `bhe tier-zero [domain]`
 Lists the Tier Zero / high-value principals (the crown jewels the engine funnels
@@ -85,7 +82,6 @@ latest collection counts + completeness. Run this *before* trusting findings.
 $ bhe --mock quality
 $ bhe --mock quality CORP.LOCAL
 ```
-> 📸 **Screenshot:** `bhe --mock quality`
 
 ---
 
@@ -104,7 +100,6 @@ a given target), and shows the Tier Zero object each one reaches (`reaches_t0`).
 $ bhe --mock choke --tier-zero
 $ bhe --mock choke --tier-zero -d CORP.LOCAL
 ```
-> 📸 **Screenshot:** `bhe --mock choke --tier-zero`
 
 ### `bhe leaks [target] [--tier-zero] [-d domain]`
 **Cross-domain / cross-platform leakage** into the crown jewels — boundary
@@ -116,22 +111,30 @@ directly on Tier Zero. `bhe --mock leaks --tier-zero`
 ## Search, entities & relationships
 
 ### `bhe search <term> [--kind/-k User]`
-Search by name or objectid; substring-friendly (falls back to a name `CONTAINS`
-match, so `spy` finds `SPYS@...`). `bhe --mock search ali`
+Search by name or objectid. Substring-friendly: if BHE's index misses a partial,
+it falls back to a name `CONTAINS` match, so `spy` finds `SPYS@…`. `--kind` filters
+by node kind (e.g. `User`, `Group`, `Computer`).
+```console
+$ bhe --mock search ali
+```
 
 ### `bhe entity <name|id> [--kind/-k user]`
-Entity **properties**, resolving names to objectids and disambiguating.
-`bhe --mock entity ALICE@CORP.LOCAL`
+A node's **properties**, resolving a name to its objectid and disambiguating
+ambiguous names. `--kind` hints/forces the kind. `bhe --mock entity ALICE@CORP.LOCAL`
 
 ### `bhe entity <name> --show/-s <relationship>`
-Pivot from properties to a **relationship**. Aspects:
+Pivot from properties to one of the node's relationships:
 `sessions` · `members` · `memberships` · `admin-rights` · `admins` ·
-`controllers` · `controllables`. Where the graph form returns edges, the
-permission/right is shown. See [Entities & Relationships](Use-Case-Entities-and-Relationships).
+`controllers` · `controllables`.
+
+It lists the related objects; **when the relationship's graph form returns edges,
+the permission/right is shown too** as `from | right | to` (e.g. `GenericAll`,
+`HasSession`) — otherwise you get the plain object list. See
+[Entities & Relationships](Use-Case-Entities-and-Relationships).
 ```console
 $ bhe --mock entity ALICE@CORP.LOCAL --show sessions
+$ bhe entity "DOMAIN ADMINS@CORP.LOCAL" --show members
 ```
-> 📸 **Screenshot:** `bhe --mock entity ALICE@CORP.LOCAL --show sessions`
 
 ---
 
@@ -147,7 +150,6 @@ Shortest attack path between two principals — shown as the ordered escalation
 ```console
 $ bhe --mock hunt path ALICE@CORP.LOCAL "DOMAIN ADMINS@CORP.LOCAL"
 ```
-> 📸 **Screenshot:** the escalation table above.
 
 ### `bhe hunt tier-zero <source>`
 Paths from a principal to ANY Tier Zero target.
