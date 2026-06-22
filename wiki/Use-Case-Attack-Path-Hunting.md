@@ -1,7 +1,9 @@
 # Use Case: Attack-Path Hunting
 
 **Scenario:** you want to understand and remediate the attack paths into Tier Zero
-— at scale, without global path queries that time out.
+— at scale, without global path queries that time out. (You ran `choke` and `leaks`
+in the [triage workflow](Use-Case-New-Customer-Triage); this is the deep dive —
+how the engine works, plus pulling specific paths with `hunt`.)
 
 `bhe` gives you two complementary tools:
 

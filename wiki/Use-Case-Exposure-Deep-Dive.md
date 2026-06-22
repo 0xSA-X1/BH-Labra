@@ -1,20 +1,15 @@
 # Use Case: Exposure Deep-Dive
 
-**Scenario:** `bhe posture` says `ESSOS.LOCAL` is at **86%** exposure. What does
-that number mean, and what's driving it?
+**Scenario:** the [triage workflow](Use-Case-New-Customer-Triage) ranked
+`ESSOS.LOCAL` at **86%** exposure (from `bhe posture`). What does that number mean,
+and what's driving it?
 
 ## What "exposure" means
 
 A domain's **exposure** is the share of its principals (users, computers, groups)
 that can reach a **Tier Zero** (most-privileged) asset through *at least one*
-attack path. BHE computes this server-side; `bhe` shows it as a percentage, the
-same value as the web GUI.
-
-```console
-$ bhe posture                 # all domains, ranked by exposure %
-$ bhe posture ESSOS.LOCAL     # just one
-```
-> 📸 **Screenshot:** `bhe posture`
+attack path. BHE computes it server-side; `bhe` shows it as a percentage, the same
+value as the web GUI — it's the column `bhe posture` ranks on.
 
 ## Breaking it down: `--explain`
 

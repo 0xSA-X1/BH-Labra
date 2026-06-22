@@ -54,11 +54,9 @@ If a platform's kinds don't start with the expected prefix (`Okta`, `GitHub`,
 `Jamf`, `AZ`), use `bhe hunt hybrid <user> --to <actual-prefix>` to target it
 exactly.
 
-## Putting it together
+## In an OpenGraph estate
 
-```console
-$ bhe tier-zero                                # crown jewels (any platform)
-$ bhe choke --tier-zero                        # highest-leverage fixes, all platforms
-$ bhe leaks --tier-zero                        # AD <-> Azure/Okta/GitHub/Jamf crossings
-$ bhe hunt hybrid <a privileged AD user>       # specific hybrid paths
-```
+Nothing about the [triage workflow](Use-Case-New-Customer-Triage) changes —
+`tier-zero`, `choke`, and `leaks` already span every platform (that's the point of
+the section above). The only OpenGraph-specific move is **`bhe hunt hybrid <user>`**
+for explicit cross-platform paths, plus the platform labels `leaks` shows.

@@ -1,7 +1,9 @@
 # Use Case: Collection Health & Audit
 
-**Scenario:** before you trust any finding, you want to know the data is complete
-and current — and you want to see who's been using the BHE platform.
+**Scenario:** the "trust the data" step of the
+[triage workflow](Use-Case-New-Customer-Triage) opens with `bhe quality`; this page
+is the full version — confirm collection is complete and current, and see who's
+been using the BHE platform.
 
 ## Is the data complete? — `quality`
 
@@ -55,11 +57,3 @@ $ bhe audit --days 30             # widen the window (default 7)
 Usernames are shown without their domain; times are in your local timezone.
 
 > 📸 **Screenshot:** `bhe audit --last-per-user`
-
-## Quick health pass
-
-```console
-bhe doctor                    # read-only health battery (exits non-zero on failure)
-bhe quality                   # collection completeness
-bhe clients ; bhe jobs --finished   # collectors + last runs
-```
