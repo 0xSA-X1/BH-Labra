@@ -28,17 +28,17 @@ screenshot) yourself.
 
 End-to-end, screenshot-friendly workflows:
 
-1. **[Triaging a New Customer](Use-Case-New-Customer-Triage)** — from "I just got
+1. **[Triaging a New Customer](New-Customer-Triage)** — from "I just got
    access" to a prioritized remediation list.
-2. **[Exposure Deep-Dive](Use-Case-Exposure-Deep-Dive)** — what a domain's
+2. **[Exposure Deep-Dive](Exposure-Deep-Dive)** — what a domain's
    exposure % actually means and what drives it.
-3. **[Attack-Path Hunting](Use-Case-Attack-Path-Hunting)** — choke points,
+3. **[Attack-Path Hunting](Attack-Path-Hunting)** — choke points,
    leakage, and guided Cypher.
-4. **[OpenGraph & Hybrid Paths](Use-Case-OpenGraph-Hybrid-Paths)** — Okta, GitHub,
+4. **[OpenGraph & Hybrid Paths](OpenGraph-Hybrid-Paths)** — Okta, GitHub,
    Jamf, and Azure crossings.
-5. **[Collection Health & Audit](Use-Case-Collection-Health-and-Audit)** — is the
+5. **[Collection Health & Audit](Collection-Health-and-Audit)** — is the
    data complete, and who's been in the platform.
-6. **[Entities & Relationships](Use-Case-Entities-and-Relationships)** — drill
+6. **[Entities & Relationships](Entities-and-Relationships)** — drill
    into a principal: sessions, members, admin rights, ACLs.
 
 ## The 60-second tour

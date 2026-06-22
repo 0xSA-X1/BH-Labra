@@ -1,5 +1,3 @@
-# Use Case: Entities & Relationships
-
 **Scenario:** you've found an interesting principal (a choke point, a flagged
 finding, a suspicious account) and want to drill into it — its properties *and* its
 relationships (sessions, group membership, admin rights, and the ACL attack
@@ -16,7 +14,8 @@ Search is forgiving: if BHE's index misses a partial, it falls back to a name
 `CONTAINS` match, so `spy` finds `SPYS@ESSOS.LOCAL`. (`SPYS` is a *Group*, which is
 why `spy --kind User` correctly returns nothing.)
 
-> 📸 **Screenshot:** `bhe search alice`
+> 📸 **Screenshot:** 
+<img width="1018" height="132" alt="bhe search alice" src="https://github.com/user-attachments/assets/9423a5b7-beb1-40ef-aedd-413b19df8c34" />
 
 ## Inspect it — `entity`
 
@@ -54,7 +53,8 @@ Where the endpoint returns edges, the **permission/right** is shown
 (`from | right | to`), e.g. `DOMAIN ADMINS -[GenericAll]-> SPYS`. Otherwise you get
 the related objects.
 
-> 📸 **Screenshot:** `bhe entity SPYS@ESSOS.LOCAL --show controllers`
+> 📸 **Screenshot:** 
+<img width="728" height="258" alt="bhe entity show controllers" src="https://github.com/user-attachments/assets/b6740140-e970-45c7-bcd6-bfca6a53985c" />
 
 ## Why this matters for remediation
 
@@ -62,7 +62,7 @@ the related objects.
   attacker abuses and what you remediate.
 - `sessions` is AD **logon activity** (where credentials have been seen) — useful
   for blast-radius and for the "when did X log in" question (distinct from the BHE
-  *platform* logins in [`audit`](Use-Case-Collection-Health-and-Audit)).
+  *platform* logins in [`audit`](Collection-Health-and-Audit)).
 - Pair with `bhe choke` (find the high-leverage object) → `entity --show
   controllers` (see who can abuse it) → `bhe hunt tier-zero` (the full path).
 

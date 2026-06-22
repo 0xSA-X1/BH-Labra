@@ -1,6 +1,4 @@
-# Use Case: Exposure Deep-Dive
-
-**Scenario:** the [triage workflow](Use-Case-New-Customer-Triage) ranked
+**Scenario:** the [triage workflow](New-Customer-Triage) ranked
 `ESSOS.LOCAL` at **86%** exposure (from `bhe posture`). What does that number mean,
 and what's driving it?
 
@@ -29,7 +27,9 @@ You get the headline (exposure %, Tier Zero count, critical findings) plus the
 
 Fix high-severity, high-exposure rows first — they cut the most paths.
 
-> 📸 **Screenshot:** `bhe posture ESSOS.LOCAL --explain`
+> 📸 **Screenshot:** 
+<img width="1471" height="231" alt="bhe mock posture explain" src="https://github.com/user-attachments/assets/a2de72e2-b04f-48c7-8024-7176c1c80b50" />
+
 
 ## Why the per-finding numbers don't add up to the total
 
@@ -66,5 +66,5 @@ principals, lower individual blast radius). Read both columns together.
 
 ## See also
 
-- [Attack-Path Hunting](Use-Case-Attack-Path-Hunting) — turn a finding into the
+- [Attack-Path Hunting](Attack-Path-Hunting) — turn a finding into the
   actual paths and choke points.

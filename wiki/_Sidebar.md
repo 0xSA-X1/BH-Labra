@@ -11,9 +11,9 @@
 - [Command Reference](Command-Reference)
 
 **Use cases**
-- [New-Customer Triage](Use-Case-New-Customer-Triage)
-- [Exposure Deep-Dive](Use-Case-Exposure-Deep-Dive)
-- [Attack-Path Hunting](Use-Case-Attack-Path-Hunting)
-- [OpenGraph & Hybrid Paths](Use-Case-OpenGraph-Hybrid-Paths)
-- [Collection Health & Audit](Use-Case-Collection-Health-and-Audit)
-- [Entities & Relationships](Use-Case-Entities-and-Relationships)
+- [New-Customer Triage](New-Customer-Triage)
+- [Exposure Deep-Dive](Exposure-Deep-Dive)
+- [Attack-Path Hunting](Attack-Path-Hunting)
+- [OpenGraph & Hybrid Paths](OpenGraph-Hybrid-Paths)
+- [Collection Health & Audit](Collection-Health-and-Audit)
+- [Entities & Relationships](Entities-and-Relationships)

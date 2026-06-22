@@ -1,8 +1,6 @@
-# Use Case: Attack-Path Hunting
-
 **Scenario:** you want to understand and remediate the attack paths into Tier Zero
 — at scale, without global path queries that time out. (You ran `choke` and `leaks`
-in the [triage workflow](Use-Case-New-Customer-Triage); this is the deep dive —
+in the [triage workflow](New-Customer-Triage); this is the deep dive —
 how the engine works, plus pulling specific paths with `hunt`.)
 
 `bhe` gives you two complementary tools:
@@ -28,7 +26,8 @@ Ranks the objects whose removal **disconnects the most principals** from Tier
 Zero, and shows the Tier Zero asset each one `reaches_t0`. This is your prioritized
 remediation list: "fix this object → cut N% of paths."
 
-> 📸 **Screenshot:** `bhe choke --tier-zero`
+> 📸 **Screenshot:** 
+<img width="1036" height="249" alt="bhe choke essos" src="https://github.com/user-attachments/assets/63b5fb64-c08f-4a5a-97ea-f8489ea6c028" />
 
 ### `leaks` — boundary crossings
 
@@ -65,10 +64,8 @@ step | from                | edge       | to
   2  | HELPDESK@CORP.LOCAL | GenericAll | DOMAIN ADMINS@CORP.LOCAL
 ```
 
-> 📸 **Screenshot:** `bhe hunt path ALICE@CORP.LOCAL "DOMAIN ADMINS@CORP.LOCAL"`
-
 For cross-platform / hybrid paths (Azure, Okta, GitHub, Jamf) see
-[OpenGraph & Hybrid Paths](Use-Case-OpenGraph-Hybrid-Paths).
+[OpenGraph & Hybrid Paths](OpenGraph-Hybrid-Paths).
 
 ## Raw Cypher
 
@@ -85,6 +82,6 @@ Write clauses are blocked — see [Read-Only Safety](Read-Only-Safety).
 - Start broad (`choke --tier-zero`), then scope to a domain (`-d`) to keep the
   graph small and the output focused.
 - Use `bhe entity <choke-point> --show controllers` to see *who/what* can abuse a
-  choke point ([Entities & Relationships](Use-Case-Entities-and-Relationships)).
+  choke point ([Entities & Relationships](Entities-and-Relationships)).
 - A choke point that `reaches_t0` for several crown jewels is often the most urgent
   fix.

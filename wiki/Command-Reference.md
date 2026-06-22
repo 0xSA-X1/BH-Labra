@@ -50,7 +50,7 @@ $ bhe --mock posture CORP.LOCAL
 ### `bhe posture <domain> --explain`
 **Breaks down what drives a domain's exposure** — the headline number plus the
 findings behind it (severity, affected principals, per-finding exposure % and
-impact %). See [Exposure Deep-Dive](Use-Case-Exposure-Deep-Dive).
+impact %). See [Exposure Deep-Dive](Exposure-Deep-Dive).
 ```console
 $ bhe --mock posture CORP.LOCAL --explain
 ```
@@ -130,7 +130,7 @@ Pivot from properties to one of the node's relationships:
 It lists the related objects; **when the relationship's graph form returns edges,
 the permission/right is shown too** as `from | right | to` (e.g. `GenericAll`,
 `HasSession`) — otherwise you get the plain object list. See
-[Entities & Relationships](Use-Case-Entities-and-Relationships).
+[Entities & Relationships](Entities-and-Relationships).
 ```console
 $ bhe --mock entity ALICE@CORP.LOCAL --show sessions
 $ bhe entity "DOMAIN ADMINS@CORP.LOCAL" --show members
@@ -157,7 +157,7 @@ Paths from a principal to ANY Tier Zero target.
 ### `bhe hunt hybrid <source> [--to/-t azure|okta|github|jamf]`
 Paths from an AD principal to ANY cloud/SaaS node — Azure **and** OpenGraph
 (Okta/GitHub/Jamf) by default. `--to` scopes to one platform (or a raw label
-prefix for a custom OpenGraph source). See [OpenGraph & Hybrid Paths](Use-Case-OpenGraph-Hybrid-Paths).
+prefix for a custom OpenGraph source). See [OpenGraph & Hybrid Paths](OpenGraph-Hybrid-Paths).
 
 ### `bhe hunt kerberoastable <domain>` / `bhe hunt asrep <domain>`
 Enabled users with an SPN (Kerberoastable) / with DontReqPreauth (AS-REP
@@ -189,7 +189,7 @@ local timezone. `bhe --mock events`
 ### `bhe audit [--logins] [--user/-u <name>] [--last-per-user] [--days N] [--since <iso>] [--action/-a <s>]`
 **Platform audit log** — who logged into BHE / took actions, and when (local
 time, usernames without domains). `--logins` for auth events; `--last-per-user`
-for a "who logged in last" summary. See [Collection Health & Audit](Use-Case-Collection-Health-and-Audit).
+for a "who logged in last" summary. See [Collection Health & Audit](Collection-Health-and-Audit).
 ```console
 $ bhe --mock audit --logins
 $ bhe --mock audit --last-per-user
